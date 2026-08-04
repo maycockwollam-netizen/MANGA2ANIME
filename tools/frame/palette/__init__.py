@@ -34,6 +34,28 @@ def _validate_hex_color(color: str | None) -> str | None:
     return color.upper()
 
 
+def _validate_character_id(character_id: str | None) -> str:
+    """Validate character ID is non-empty and not whitespace-only.
+
+    Args:
+        character_id: Character ID string
+
+    Returns:
+        Trimmed character ID
+
+    Raises:
+        ValueError: If character ID is empty or whitespace-only
+    """
+    if character_id is None:
+        raise ValueError("character_id cannot be None")
+    if not isinstance(character_id, str):
+        raise ValueError(f"character_id must be string, got {type(character_id).__name__}")
+    trimmed = character_id.strip()
+    if not trimmed:
+        raise ValueError("character_id cannot be empty or whitespace-only")
+    return trimmed
+
+
 class CharacterColorPalette(BaseModel):
     """Character color palette for consistent coloring.
 
@@ -65,6 +87,12 @@ class CharacterColorPalette(BaseModel):
         default_factory=dict,
         description="Additional custom color mappings"
     )
+
+    @field_validator("character_id", mode="before")
+    @classmethod
+    def validate_character_id(cls, v: str | None) -> str:
+        """Validate character ID."""
+        return _validate_character_id(v)
 
     @field_validator("hair", "skin", "eyes", "outfit", "accessories", mode="before")
     @classmethod
