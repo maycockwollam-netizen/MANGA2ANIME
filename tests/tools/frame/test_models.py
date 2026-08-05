@@ -172,7 +172,7 @@ class TestFrame:
         assert frame.frame_index == 0
         assert frame.timestamp_ms == 0
         assert frame.duration_ms == 1000
-        assert frame.layers == []
+        assert frame.layers == ()
 
     def test_frame_with_layers(self) -> None:
         """Test frame with layers."""
@@ -180,6 +180,8 @@ class TestFrame:
         layer2 = FrameLayer(layer_type=LayerType.CHARACTER, layer_index=1)
         frame = Frame(frame_index=0, layers=[layer1, layer2])
         assert len(frame.layers) == 2
+        # Verify it's a tuple
+        assert isinstance(frame.layers, tuple)
 
     def test_frame_index_non_negative(self) -> None:
         """Test frame_index must be non-negative."""
@@ -199,6 +201,13 @@ class TestFrame:
         layer2 = FrameLayer(layer_type=LayerType.BACKGROUND, layer_index=0)
         # Out of order
         with pytest.raises(ValueError):
+            Frame(frame_index=0, layers=[layer1, layer2])
+
+    def test_duplicate_layer_index_rejected(self) -> None:
+        """Test duplicate layer_index values are rejected."""
+        layer1 = FrameLayer(layer_type=LayerType.CHARACTER, layer_index=1)
+        layer2 = FrameLayer(layer_type=LayerType.BACKGROUND, layer_index=1)
+        with pytest.raises(ValueError, match="duplicate layer_index"):
             Frame(frame_index=0, layers=[layer1, layer2])
 
 
@@ -267,8 +276,8 @@ class TestFrameSequence:
         assert sequence.sequence_id == "seq_1"
         assert sequence.name == "Opening Sequence"
         assert sequence.frame_rate == 24.0
-        assert sequence.frames == []
-        assert sequence.transitions == []
+        assert sequence.frames == ()
+        assert sequence.transitions == ()
 
     def test_sequence_id_empty_rejected(self) -> None:
         """Test empty sequence_id is rejected."""
@@ -308,9 +317,13 @@ class TestFrameSequence:
             frames=[frame1, frame2],
         )
         assert len(sequence.frames) == 2
+        # Verify it's a tuple
+        assert isinstance(sequence.frames, tuple)
 
-    def test_sequence_with_transitions(self) -> None:
-        """Test sequence with transitions."""
+    def test_sequence_with_transitions_and_frames(self) -> None:
+        """Test sequence with transitions and valid frame references."""
+        frame1 = Frame(frame_index=0)
+        frame2 = Frame(frame_index=1)
         transition = FrameTransition(
             source_frame_index=0,
             target_frame_index=1,
@@ -318,9 +331,38 @@ class TestFrameSequence:
         )
         sequence = FrameSequence(
             sequence_id="seq_1",
+            frames=[frame1, frame2],
             transitions=[transition],
         )
         assert len(sequence.transitions) == 1
+
+    def test_transitions_rejected_without_frames(self) -> None:
+        """Test transitions cannot exist without frames."""
+        transition = FrameTransition(
+            source_frame_index=0,
+            target_frame_index=1,
+            duration_ms=500,
+        )
+        with pytest.raises(ValueError, match="transitions cannot exist in an empty sequence"):
+            FrameSequence(
+                sequence_id="seq_1",
+                transitions=[transition],
+            )
+
+    def test_transition_invalid_frame_index_rejected(self) -> None:
+        """Test transition with non-existent frame index is rejected."""
+        frame1 = Frame(frame_index=0)
+        transition = FrameTransition(
+            source_frame_index=0,
+            target_frame_index=99,  # Frame 99 doesn't exist
+            duration_ms=500,
+        )
+        with pytest.raises(ValueError, match="target_frame_index 99 does not exist"):
+            FrameSequence(
+                sequence_id="seq_1",
+                frames=[frame1],
+                transitions=[transition],
+            )
 
 
 class TestSerialization:
@@ -378,6 +420,95 @@ class TestSerialization:
         data = original.model_dump()
         reconstructed = FrameSequence(**data)
         assert reconstructed == original
+
+
+class TestDeepImmutability:
+    """Tests for deep immutability guarantees."""
+
+    def test_frame_layers_is_tuple(self) -> None:
+        """Test that Frame.layers is stored as tuple."""
+        frame = Frame(
+            frame_index=0,
+            layers=[FrameLayer(layer_type=LayerType.BACKGROUND, layer_index=0)],
+        )
+        assert isinstance(frame.layers, tuple)
+
+    def test_frame_layers_cannot_append(self) -> None:
+        """Test that Frame.layers tuple cannot be appended to."""
+        frame = Frame(
+            frame_index=0,
+            layers=[FrameLayer(layer_type=LayerType.BACKGROUND, layer_index=0)],
+        )
+        with pytest.raises(AttributeError):
+            frame.layers.append(FrameLayer(layer_type=LayerType.CHARACTER, layer_index=1))
+
+    def test_frame_layers_source_list_modification_protected(self) -> None:
+        """Test that modifying source list doesn't affect Frame."""
+        original = [FrameLayer(layer_type=LayerType.BACKGROUND, layer_index=0)]
+        frame = Frame(frame_index=0, layers=original)
+
+        # Modify original
+        original.append(FrameLayer(layer_type=LayerType.CHARACTER, layer_index=1))
+
+        # Frame should be unaffected
+        assert len(frame.layers) == 1
+
+    def test_frame_sequence_frames_is_tuple(self) -> None:
+        """Test that FrameSequence.frames is stored as tuple."""
+        sequence = FrameSequence(
+            sequence_id="seq_1",
+            frames=[Frame(frame_index=0)],
+        )
+        assert isinstance(sequence.frames, tuple)
+
+    def test_frame_sequence_transitions_is_tuple(self) -> None:
+        """Test that FrameSequence.transitions is stored as tuple."""
+        sequence = FrameSequence(
+            sequence_id="seq_1",
+            frames=[Frame(frame_index=0), Frame(frame_index=1)],
+            transitions=[FrameTransition(source_frame_index=0, target_frame_index=1, duration_ms=500)],
+        )
+        assert isinstance(sequence.transitions, tuple)
+
+    def test_frame_sequence_frames_tuple_cannot_append(self) -> None:
+        """Test that FrameSequence.frames tuple cannot be appended to."""
+        sequence = FrameSequence(
+            sequence_id="seq_1",
+            frames=[Frame(frame_index=0)],
+        )
+        with pytest.raises(AttributeError):
+            sequence.frames.append(Frame(frame_index=1))
+
+    def test_nested_mutation_does_not_affect_source(self) -> None:
+        """Test that modifying a source list doesn't affect the created model."""
+        original_frames = [Frame(frame_index=0)]
+        sequence = FrameSequence(sequence_id="seq_1", frames=original_frames)
+
+        # Modify original list
+        original_frames.append(Frame(frame_index=1))
+
+        # Sequence should be unaffected
+        assert len(sequence.frames) == 1
+
+    def test_nested_frame_mutation_does_not_affect_source(self) -> None:
+        """Test that modifying a Frame doesn't affect the one in the tuple."""
+        original_frame = Frame(frame_index=0)
+        sequence = FrameSequence(
+            sequence_id="seq_1",
+            frames=[original_frame],
+        )
+
+        # Replace in list (should fail because tuple)
+        with pytest.raises(TypeError):
+            sequence.frames[0] = Frame(frame_index=1)
+
+    def test_sequence_is_frozen(self) -> None:
+        """Test that FrameSequence itself is frozen (immutable)."""
+        sequence = FrameSequence(sequence_id="seq_1")
+        with pytest.raises(Exception):
+            sequence.sequence_id = "new_id"
+        with pytest.raises(Exception):
+            sequence.frame_rate = 30.0
 
 
 class TestDeterminism:

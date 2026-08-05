@@ -63,7 +63,10 @@ class CharacterColorPalette(BaseModel):
     Colorization agents should READ this palette as source of truth,
     not override colors with their own choices.
 
-    The palette is immutable/frozen to prevent accidental modification.
+    Deep Immutability:
+    - The palette is frozen (immutable)
+    - custom_colors is stored as sorted tuple of tuples for immutability
+    - This ensures colors cannot be modified after construction
 
     Example:
         palette = CharacterColorPalette(
@@ -83,9 +86,9 @@ class CharacterColorPalette(BaseModel):
     eyes: str = Field(description="Eye color in HEX format")
     outfit: str = Field(description="Primary outfit color in HEX format")
     accessories: str | None = Field(default=None, description="Accessories color in HEX format")
-    custom_colors: dict[str, str] = Field(
-        default_factory=dict,
-        description="Additional custom color mappings"
+    custom_colors: tuple[tuple[str, str], ...] = Field(
+        default_factory=tuple,
+        description="Additional custom color mappings as immutable sorted tuple"
     )
 
     @field_validator("character_id", mode="before")
@@ -102,20 +105,47 @@ class CharacterColorPalette(BaseModel):
 
     @field_validator("custom_colors", mode="before")
     @classmethod
-    def validate_custom_colors(cls, v: dict | None) -> dict[str, str]:
-        """Validate custom color values."""
+    def validate_and_convert_custom_colors(
+        cls,
+        v: dict[str, str] | tuple[tuple[str, str], ...] | None
+    ) -> tuple[tuple[str, str], ...]:
+        """Validate custom color values and convert to immutable sorted tuple.
+
+        Args:
+            v: Custom colors as dict or tuple of tuples
+
+        Returns:
+            Sorted tuple of (key, value) tuples for immutability and determinism
+
+        Raises:
+            ValueError: If custom colors contain invalid format
+        """
         if v is None:
-            return {}
+            return ()
+        if isinstance(v, tuple):
+            # Already in tuple format - validate and return
+            result = []
+            for item in v:
+                if not isinstance(item, (tuple, list)) or len(item) != 2:
+                    raise ValueError(f"Custom color item must be (key, value) tuple, got {type(item)}")
+                key, value = item
+                if not isinstance(key, str):
+                    raise ValueError(f"Custom color key must be string, got {type(key).__name__}")
+                validated = _validate_hex_color(value)
+                if validated is not None:
+                    result.append((key, validated))
+            return tuple(sorted(result))
         if not isinstance(v, dict):
-            raise ValueError(f"custom_colors must be dict, got {type(v).__name__}")
-        result = {}
+            raise ValueError(f"custom_colors must be dict or tuple, got {type(v).__name__}")
+        result = []
         for key, value in v.items():
             if not isinstance(key, str):
                 raise ValueError(f"Custom color key must be string, got {type(key).__name__}")
             validated = _validate_hex_color(value)
             if validated is not None:
-                result[key] = validated
-        return result
+                result.append((key, validated))
+        # Sort for deterministic ordering
+        return tuple(sorted(result))
 
 
 __all__ = ["CharacterColorPalette"]

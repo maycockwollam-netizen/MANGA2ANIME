@@ -301,6 +301,18 @@ class TestInterpolateTransform:
         result = interpolate_transform(start, end, 0.5)
         assert result.rotation_deg == 90.0
 
+    def test_rotation_direct_interpolation_not_shortest_angle(self) -> None:
+        """Test rotation uses direct interpolation, NOT shortest-angle.
+
+        This is a regression test to ensure current behavior is preserved.
+        Interpolating 350° to 10° should give 180° (direct), not -20° (shortest).
+        """
+        start = FrameTransform(rotation_deg=350.0)
+        end = FrameTransform(rotation_deg=10.0)
+        result = interpolate_transform(start, end, 0.5)
+        # Direct: 350 + (10 - 350) * 0.5 = 350 + (-340) * 0.5 = 350 - 170 = 180
+        assert result.rotation_deg == 180.0
+
     def test_opacity_interpolation(self) -> None:
         """Test opacity interpolation."""
         start = FrameTransform(opacity=0.0)

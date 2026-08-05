@@ -25,7 +25,7 @@ class TestFrameModels:
 
         assert frame.frame_index == 0
         assert frame.timestamp_ms == 0
-        assert frame.layers == []
+        assert frame.layers == ()
 
     def test_frame_with_layers(self) -> None:
         """Test frame with layers."""
@@ -225,7 +225,7 @@ class TestCharacterColorPalette:
         assert palette.accessories == "#333333"
 
     def test_custom_colors(self) -> None:
-        """Test custom colors dictionary."""
+        """Test custom colors as immutable tuple."""
         palette = CharacterColorPalette(
             character_id="test",
             hair="#FF9900",
@@ -235,8 +235,12 @@ class TestCharacterColorPalette:
             custom_colors={"cape": "#FF0000", "mask": "#000000"},
         )
 
-        assert palette.custom_colors["cape"] == "#FF0000"
-        assert palette.custom_colors["mask"] == "#000000"
+        # custom_colors is now a tuple of tuples, sorted by key
+        assert isinstance(palette.custom_colors, tuple)
+        assert len(palette.custom_colors) == 2
+        # Sorted alphabetically by key
+        assert ("cape", "#FF0000") in palette.custom_colors
+        assert ("mask", "#000000") in palette.custom_colors
 
     def test_empty_character_id(self) -> None:
         """Test empty character ID raises error."""

@@ -100,6 +100,9 @@ class FrameLayer(BaseModel):
         source_path: Optional path to layer source file
         transform: Optional transform data for this layer
         visible: Whether layer is visible (default: True)
+
+    Invariant: The combination of layer_type and layer_index should be unique
+    within a frame to avoid ambiguity in rendering order.
     """
 
     layer_id: str | None = Field(default=None, description="Unique layer identifier")
@@ -133,14 +136,14 @@ class Frame(BaseModel):
         frame_index: Zero-based index for frame ordering
         timestamp_ms: Optional timestamp in milliseconds from sequence start
         duration_ms: Optional duration this frame is displayed
-        layers: Ordered list of frame layers (bottom to top)
+        layers: Ordered list of frame layers (bottom to top), stored as tuple for immutability
         source_path: Optional path to frame source
     """
 
     frame_index: int = Field(ge=0, description="Zero-based frame index")
     timestamp_ms: int | None = Field(default=None, ge=0, description="Timestamp in milliseconds")
     duration_ms: int | None = Field(default=None, ge=0, description="Duration in milliseconds")
-    layers: list[FrameLayer] = Field(default_factory=list, description="Frame layers (bottom to top)")
+    layers: tuple[FrameLayer, ...] = Field(default_factory=tuple, description="Frame layers (bottom to top)")
     source_path: Path | None = Field(default=None, description="Path to frame source")
 
     @field_validator("timestamp_ms", "duration_ms", mode="before")
@@ -155,13 +158,31 @@ class Frame(BaseModel):
             raise ValueError("Timing values cannot be negative")
         return v
 
+    @field_validator("layers", mode="before")
+    @classmethod
+    def convert_layers_to_tuple(cls, v: list[FrameLayer] | tuple[FrameLayer, ...] | None) -> tuple[FrameLayer, ...]:
+        """Convert layers list to tuple for immutability."""
+        if v is None:
+            return ()
+        if isinstance(v, tuple):
+            return v
+        if isinstance(v, list):
+            return tuple(v)
+        return ()
+
     @model_validator(mode="after")
     def validate_layer_ordering(self) -> Frame:
-        """Validate layers have consistent ordering."""
+        """Validate layers are ordered by layer_index without duplicates.
+
+        Invariant: Layers must be provided in ascending order by layer_index.
+        Duplicate layer_index values are rejected to prevent ambiguity.
+        """
         if self.layers:
             indices = [layer.layer_index for layer in self.layers]
             if indices != sorted(indices):
-                raise ValueError("layers should be ordered by layer_index (bottom to top)")
+                raise ValueError("layers must be ordered by layer_index (bottom to top)")
+            if len(indices) != len(set(indices)):
+                raise ValueError("duplicate layer_index values are not allowed")
         return self
 
 
@@ -177,6 +198,10 @@ class FrameTransition(BaseModel):
         duration_ms: Transition duration in milliseconds
         transition_type: Type of transition (cut, fade, dissolve, etc.)
         interpolation: Optional interpolation type
+
+    Note: Frame index existence is NOT validated at model level because
+    FrameSequence context is required to know available frame indices.
+    Cross-reference validation is performed at the sequence level.
     """
 
     source_frame_index: int = Field(ge=0, description="Source frame index")
@@ -219,12 +244,21 @@ class FrameSequence(BaseModel):
     Pure data contract for frame sequences.
     Does not perform playback or rendering.
 
+    Deep Immutability:
+    - The sequence itself is frozen (immutable)
+    - frames is stored as tuple (immutable collection)
+    - transitions is stored as tuple (immutable collection)
+
+    Cross-reference Validation:
+    - Transition frame references are validated at sequence level
+    - Only transitions referencing valid frame indices are accepted
+
     Attributes:
         sequence_id: Unique identifier for this sequence
         name: Human-readable name for the sequence
         frame_rate: Target frame rate in FPS (for timing calculations)
-        frames: Ordered list of frames in the sequence
-        transitions: Optional list of transitions between frames
+        frames: Ordered tuple of frames in the sequence
+        transitions: Tuple of transitions between frames
     """
 
     model_config = {"frozen": True}
@@ -232,8 +266,8 @@ class FrameSequence(BaseModel):
     sequence_id: str = Field(min_length=1, description="Unique sequence identifier")
     name: str | None = Field(default=None, description="Human-readable sequence name")
     frame_rate: float = Field(default=24.0, gt=0, le=120, description="Frame rate in FPS")
-    frames: list[Frame] = Field(default_factory=list, description="Ordered frames")
-    transitions: list[FrameTransition] = Field(default_factory=list, description="Transitions")
+    frames: tuple[Frame, ...] = Field(default_factory=tuple, description="Ordered frames")
+    transitions: tuple[FrameTransition, ...] = Field(default_factory=tuple, description="Transitions")
 
     @field_validator("sequence_id", mode="before")
     @classmethod
@@ -245,6 +279,65 @@ class FrameSequence(BaseModel):
         if not stripped:
             raise ValueError("sequence_id cannot be empty or whitespace-only")
         return stripped
+
+    @field_validator("frames", mode="before")
+    @classmethod
+    def convert_frames_to_tuple(cls, v: list[Frame] | tuple[Frame, ...] | None) -> tuple[Frame, ...]:
+        """Convert frames list to tuple for immutability."""
+        if v is None:
+            return ()
+        if isinstance(v, tuple):
+            return v
+        if isinstance(v, list):
+            return tuple(v)
+        return ()
+
+    @field_validator("transitions", mode="before")
+    @classmethod
+    def convert_transitions_to_tuple(cls, v: list[FrameTransition] | tuple[FrameTransition, ...] | None) -> tuple[FrameTransition, ...]:
+        """Convert transitions list to tuple for immutability."""
+        if v is None:
+            return ()
+        if isinstance(v, tuple):
+            return v
+        if isinstance(v, list):
+            return tuple(v)
+        return ()
+
+    @model_validator(mode="after")
+    def validate_transition_references(self) -> FrameSequence:
+        """Validate transition frame references exist in the sequence.
+
+        This validation ensures that:
+        - All transition source_frame_index values exist in the sequence
+        - All transition target_frame_index values exist in the sequence
+
+        The validation is performed at sequence level because frame existence
+        can only be determined with full sequence context.
+        """
+        if not self.frames:
+            # Empty sequence: only allow if no transitions either
+            if self.transitions:
+                raise ValueError("transitions cannot exist in an empty sequence")
+            return self
+
+        # Get valid frame indices from the sequence
+        valid_indices = {frame.frame_index for frame in self.frames}
+
+        # Validate each transition references valid frames
+        for transition in self.transitions:
+            if transition.source_frame_index not in valid_indices:
+                raise ValueError(
+                    f"transition source_frame_index {transition.source_frame_index} "
+                    f"does not exist in sequence (valid indices: {sorted(valid_indices)})"
+                )
+            if transition.target_frame_index not in valid_indices:
+                raise ValueError(
+                    f"transition target_frame_index {transition.target_frame_index} "
+                    f"does not exist in sequence (valid indices: {sorted(valid_indices)})"
+                )
+
+        return self
 
 
 __all__ = [

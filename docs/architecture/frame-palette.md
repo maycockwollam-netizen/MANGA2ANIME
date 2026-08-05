@@ -6,17 +6,44 @@ The Frame Palette (`tools/frame/palette/`) V1 provides **character color palette
 
 > Palette V1 defines the color contract. It does not perform colorization.
 
+## Deep Immutability
+
+The `CharacterColorPalette` provides deep immutability guarantees:
+
+- **The palette is frozen** - Cannot modify any field after creation
+- **`custom_colors` is stored as `tuple[tuple[str, str], ...]`** - Sorted for deterministic ordering
+- **Source dictionary modifications are protected** - Modifying the input dict after construction doesn't affect the palette
+
+```python
+palette = CharacterColorPalette(
+    character_id="naruto",
+    hair="#FF9900",
+    skin="#FFCC99",
+    eyes="#4477EE",
+    outfit="#FFCC00",
+    custom_colors={"cape": "#FF0000"},
+)
+
+# These raise exceptions:
+palette.hair = "#000000"  # Frozen instance
+palette.custom_colors.append(...)  # Tuple has no append
+```
+
 ## Character Color Consistency Concept
 
 ```
 Character
-    ↓
+    |
+    v
 CharacterColorPalette
-    ↓
+    |
+    v
 LOCKED, VALIDATED, IMMUTABLE COLOR CONTRACT
-             ↓
+             |
+             v
     future Colorization Agent
-             ↓
+             |
+             v
       colorized panels
 ```
 
@@ -27,14 +54,14 @@ The Colorization Agent will READ this palette as the **single source of truth**.
 ### Data Model
 
 ```python
-CharacterColorPalette (frozen/immutable)
-├── character_id: str          # Unique character identifier (required, non-empty)
-├── hair: str                # Hair color in HEX (#RRGGBB)
-├── skin: str                # Skin color in HEX
-├── eyes: str                # Eye color in HEX
-├── outfit: str              # Primary outfit color in HEX
-├── accessories: str | None   # Accessories color in HEX (optional)
-└── custom_colors: dict[str, str]  # Additional custom color mappings (optional)
+CharacterColorPalette (frozen/immutable, deep immutability)
+|-- character_id: str          # Unique character identifier (required, non-empty)
+|-- hair: str                  # Hair color in HEX (#RRGGBB)
+|-- skin: str                  # Skin color in HEX
+|-- eyes: str                  # Eye color in HEX
+|-- outfit: str                # Primary outfit color in HEX
+|-- accessories: str | None    # Accessories color in HEX (optional)
+|-- custom_colors: tuple[tuple[str, str], ...]  # Sorted, IMMUTABLE tuple
 ```
 
 ### Color Roles
@@ -47,7 +74,7 @@ CharacterColorPalette (frozen/immutable)
 | `eyes` | Yes | Eye color |
 | `outfit` | Yes | Primary outfit/clothing color |
 | `accessories` | No | Accessories color (e.g., headband, weapons) |
-| `custom_colors` | No | Additional named color mappings |
+| `custom_colors` | No | Additional named color mappings, sorted for determinism |
 
 ### Example
 
@@ -63,6 +90,9 @@ palette = CharacterColorPalette(
     accessories="#333333",
     custom_colors={"cape": "#FF0000", "headband": "#FFFFFF"},
 )
+
+# custom_colors is stored as sorted tuple of tuples
+# palette.custom_colors == (("cape", "#FF0000"), ("headband", "#FFFFFF"))
 ```
 
 ## HEX Validation
@@ -108,31 +138,38 @@ palette = CharacterColorPalette(
 # palette.skin == "#FFCC99"
 ```
 
-## Immutability
+## Immutability Guarantees
 
-The `CharacterColorPalette` is **frozen/immutable**:
-
-- Cannot modify any field after creation
-- Cannot reassign attributes
-- Mutation attempts raise `ValidationError`
+| Protection | Mechanism |
+|-----------|-----------|
+| Field mutation | `frozen=True` on model |
+| Collection mutation | `tuple` instead of `dict` |
+| Source dict protection | Copied and converted at construction |
+| Nested tuple protection | Tuples are inherently immutable |
 
 ```python
-palette = CharacterColorPalette(...)
-
-# These raise exceptions:
-palette.hair = "#000000"  # ❌
-palette.character_id = "new"  # ❌
-palette.custom_colors = {}  # ❌
+# Source dict modification protection
+source = {"cape": "#FF0000"}
+palette = CharacterColorPalette(
+    character_id="test",
+    hair="#FF0000",
+    skin="#FFFFFF",
+    eyes="#000000",
+    outfit="#FFFFFF",
+    custom_colors=source,
+)
+source["cape"] = "#00FF00"  # Palette unaffected
+# palette.custom_colors still has "#FF0000"
 ```
 
 ## Character ID Validation
 
 | Input | Behavior |
 |-------|----------|
-| `"character1"` | ✅ Valid |
-| `""` | ❌ Rejected (empty) |
-| `"   "` | ❌ Rejected (whitespace-only) |
-| `"  id  "` | ✅ Normalized to `"id"` |
+| `"character1"` | Valid |
+| `""` | Rejected (empty) |
+| `"   "` | Rejected (whitespace-only) |
+| `"  id  "` | Normalized to `"id"` |
 
 ## Serialization
 
@@ -150,50 +187,56 @@ reconstructed = CharacterColorPalette(**data)
 assert reconstructed == palette
 ```
 
+**Note:** `custom_colors` is serialized as a list of tuples in JSON, which is JSON-compatible.
+
 ## Dependency Boundary
 
 ```
 tools/frame/palette
-    ├── standard library (re)
-    └── pydantic (existing dependency)
+    |-- standard library (re)
+    +-- pydantic (existing dependency)
 ```
 
 **Forbidden dependencies:**
-- ❌ runtime
-- ❌ agents
-- ❌ apps
-- ❌ core
-- ❌ torch/tensorflow
-- ❌ opencv/PIL
-- ❌ diffusers/transformers
-- ❌ requests/httpx
-- ❌ FFmpeg/MoviePy
+- runtime
+- agents
+- apps
+- core
+- torch/tensorflow
+- opencv/PIL
+- diffusers/transformers
+- requests/httpx
+- FFmpeg/MoviePy
 
 ## Explicit Non-Responsibilities
 
 The palette module does NOT:
 
-- ❌ Perform colorization
-- ❌ Generate colors
-- ❌ Use AI/LLM inference
-- ❌ Process images
-- ❌ Segment characters
-- ❌ Detect colors from images
-- ❌ Access external APIs
-- ❌ Render panels
-- ❌ GPU operations
+- Perform colorization
+- Generate colors
+- Use AI/LLM inference
+- Process images
+- Segment characters
+- Detect colors from images
+- Access external APIs
+- Render panels
+- GPU operations
 
 ## Future Colorization Agent Integration
 
 ```
 CharacterColorPalette (this module)
-        ↓
+        |
+        v
 future Colorization Agent
-        ↓
+        |
+        v
   reads palette colors
-        ↓
+        |
+        v
   applies to character regions
-        ↓
+        |
+        v
    Colorized Panel Output
 ```
 
@@ -205,20 +248,20 @@ The Colorization Agent will:
 
 ## Known Limitations
 
-1. **No AI inference** — Palette must be manually defined or sourced from another system
-2. **No automatic color extraction** — Colors cannot be detected from images automatically
-3. **Fixed color schema** — Limited to hair, skin, eyes, outfit, accessories, and custom colors
-4. **No image processing** — Cannot apply colors to images directly
+1. **No AI inference** - Palette must be manually defined or sourced from another system
+2. **No automatic color extraction** - Colors cannot be detected from images automatically
+3. **Fixed color schema** - Limited to hair, skin, eyes, outfit, accessories, and custom colors
+4. **No image processing** - Cannot apply colors to images directly
 
 ## Implementation Status
 
 | Feature | Status |
 |---------|--------|
-| CharacterColorPalette model | ✅ Implemented |
-| Character ID validation | ✅ Implemented |
-| HEX validation | ✅ Implemented |
-| Canonical normalization | ✅ Implemented |
-| Immutability (frozen) | ✅ Implemented |
-| Serialization | ✅ Implemented |
-| Tests | ✅ 24 tests |
-| Documentation | ✅ This document |
+| CharacterColorPalette model | Implemented |
+| Character ID validation | Implemented |
+| HEX validation | Implemented |
+| Canonical normalization | Implemented |
+| Deep Immutability | Implemented |
+| Serialization | Implemented |
+| Tests | 30+ tests |
+| Documentation | This document |

@@ -6,6 +6,22 @@ The Frame Models (`tools/frame/models.py`) V1 provides **data contracts** for th
 
 > Models V1 defines data contracts only. It does not implement rendering, animation, or image processing.
 
+## Deep Immutability
+
+The frame models provide deep immutability guarantees:
+
+- **`FrameSequence`** is frozen/immutable
+  - The sequence itself is frozen (cannot modify attributes)
+  - `frames` is stored as `tuple[Frame, ...]` (immutable collection)
+  - `transitions` is stored as `tuple[FrameTransition, ...]` (immutable collection)
+
+- **`Frame.layers`** is stored as `tuple[FrameLayer, ...]`
+  - Once created, layers cannot be appended, removed, or reordered
+
+- **`CharacterColorPalette.custom_colors`** is stored as `tuple[tuple[str, str], ...]`
+  - Sorted for deterministic ordering
+  - Cannot be modified after construction
+
 ## Data Models
 
 ### Frame
@@ -17,7 +33,7 @@ Frame
 ├── frame_index: int          # Zero-based index (required, >= 0)
 ├── timestamp_ms: int | None   # Timestamp in ms from sequence start (optional)
 ├── duration_ms: int | None    # Display duration in ms (optional)
-├── layers: list[FrameLayer]   # Ordered layers (bottom to top)
+├── layers: tuple[FrameLayer]  # Ordered layers (bottom to top), IMMUTABLE
 └── source_path: Path | None   # Optional frame source
 ```
 
@@ -25,6 +41,7 @@ Frame
 - `frame_index` must be >= 0
 - `timestamp_ms` and `duration_ms` must be >= 0 if provided
 - Layers must be ordered by `layer_index`
+- Duplicate `layer_index` values are NOT allowed
 
 ### FrameLayer
 
@@ -34,11 +51,13 @@ Represents a logical visual layer within a frame.
 FrameLayer
 ├── layer_id: str | None       # Unique layer identifier (optional)
 ├── layer_type: LayerType      # BACKGROUND, CHARACTER, FOREGROUND, EFFECT
-├── layer_index: int           # Z-order index (>= 0)
+├── layer_index: int           # Z-order index (>= 0), must be unique within frame
 ├── source_path: Path | None   # Optional layer source
 ├── transform: FrameTransform | None  # Optional transform
 └── visible: bool              # Layer visibility (default: True)
 ```
+
+**Invariant:** `layer_index` must be unique within a frame to prevent ambiguity in rendering order.
 
 **Validation:**
 - `layer_id` is trimmed and cannot be whitespace-only if provided
@@ -85,23 +104,35 @@ FrameTransition
 **Validation:**
 - Frame indexes must be >= 0
 - Source and target frames must be different
+- Frame index existence is validated at sequence level (see below)
 
 ### FrameSequence
 
 Represents a sequence of frames with metadata.
 
 ```python
-FrameSequence (frozen/immutable)
+FrameSequence (frozen/immutable, deep immutability)
 ├── sequence_id: str          # Unique identifier (required, non-empty)
 ├── name: str | None         # Human-readable name
 ├── frame_rate: float        # FPS (default: 24.0, 0-120)
-├── frames: list[Frame]      # Ordered frames
-└── transitions: list[FrameTransition]  # Transitions
+├── frames: tuple[Frame]     # Ordered frames, IMMUTABLE
+└── transitions: tuple[FrameTransition]  # Transitions, IMMUTABLE
 ```
 
 **Validation:**
 - `sequence_id` is trimmed and cannot be empty/whitespace-only
 - `frame_rate` must be 0 < x <= 120
+- **Cross-reference validation:** Transition frame indexes must reference existing frames
+- Empty sequence cannot have transitions
+
+## Cross-Reference Validation
+
+`FrameSequence` performs cross-reference validation for transitions:
+
+1. **Empty sequence:** Transitions are rejected (no frames to transition between)
+2. **Frame existence:** All `source_frame_index` and `target_frame_index` values must match existing frame indexes in the sequence
+
+This validation is performed at the sequence level because frame existence can only be determined with full sequence context.
 
 ## Enums
 
@@ -173,11 +204,17 @@ reconstructed = Frame(**data)
 assert reconstructed == frame
 ```
 
-## Immutability
+**Note:** Collections are serialized as tuples in the output, which is JSON-compatible.
 
-- `FrameSequence` is frozen/immutable
-- Other models are mutable (can be used in nested contexts)
-- Validation ensures deterministic behavior
+## Immutability Guarantees
+
+| Model | Frozen | Collection Type | Deep Immutable |
+|-------|--------|-----------------|---------------|
+| `FrameSequence` | ✅ Yes | `tuple` | ✅ Yes |
+| `Frame` | ❌ No | `tuple` (layers) | ✅ Partial |
+| `FrameLayer` | ❌ No | N/A | N/A |
+| `FrameTransform` | ❌ No | N/A | N/A |
+| `FrameTransition` | ❌ No | N/A | N/A |
 
 ## Dependency Boundary
 
@@ -245,9 +282,7 @@ future rendering pipeline
 ## Known Limitations
 
 1. **No execution** — Models are pure data only
-2. **No validation of frame relationships** — FrameSequence doesn't validate that transition frame indexes exist in frames
-3. **No automatic layer ordering** — Layers must be provided in correct order
-4. **No timing calculations** — No built-in duration/timing calculations
+2. **No timing calculations** — No built-in duration/timing calculations
 
 ## Implementation Status
 
@@ -261,7 +296,9 @@ future rendering pipeline
 | LayerType enum | ✅ V1 |
 | TransitionType enum | ✅ V1 |
 | InterpolationType enum | ✅ V1 |
-| Validation | ✅ Implemented |
+| Deep Immutability | ✅ Implemented |
+| Cross-reference validation | ✅ Implemented |
+| Layer ordering validation | ✅ Implemented |
 | Serialization | ✅ Implemented |
-| Tests | ✅ 41 tests |
+| Tests | ✅ 56+ tests |
 | Documentation | ✅ This document |

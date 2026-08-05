@@ -36,7 +36,7 @@ class TestConstruction:
 
         assert palette.character_id == "character1"
         assert palette.accessories is None
-        assert palette.custom_colors == {}
+        assert palette.custom_colors == ()
 
     def test_optional_accessories(self) -> None:
         """Test palette with optional accessories."""
@@ -52,7 +52,7 @@ class TestConstruction:
         assert palette.accessories == "#333333"
 
     def test_custom_colors(self) -> None:
-        """Test palette with custom colors."""
+        """Test palette with custom colors as tuple."""
         palette = CharacterColorPalette(
             character_id="test",
             hair="#FF9900",
@@ -62,8 +62,12 @@ class TestConstruction:
             custom_colors={"cape": "#FF0000", "sword": "#AAAAAA"},
         )
 
-        assert palette.custom_colors["cape"] == "#FF0000"
-        assert palette.custom_colors["sword"] == "#AAAAAA"
+        # custom_colors is now a tuple of tuples, sorted by key
+        assert isinstance(palette.custom_colors, tuple)
+        assert len(palette.custom_colors) == 2
+        # Sorted alphabetically by key
+        assert palette.custom_colors[0] == ("cape", "#FF0000")
+        assert palette.custom_colors[1] == ("sword", "#AAAAAA")
 
 
 class TestCharacterID:
@@ -254,8 +258,83 @@ class TestImmutability:
 
         # Reassigning the custom_colors attribute should fail
         with pytest.raises(Exception) as exc_info:
-            palette.custom_colors = {"new_key": "#FFFFFF"}
+            palette.custom_colors = [("new_key", "#FFFFFF")]
         assert "frozen" in str(exc_info.value).lower()
+
+    def test_custom_colors_is_tuple(self) -> None:
+        """Test that custom_colors is stored as tuple."""
+        palette = CharacterColorPalette(
+            character_id="test",
+            hair="#FF9900",
+            skin="#FFCC99",
+            eyes="#4477EE",
+            outfit="#FFCC00",
+            custom_colors={"cape": "#FF0000"},
+        )
+        assert isinstance(palette.custom_colors, tuple)
+
+    def test_custom_colors_cannot_append(self) -> None:
+        """Test that custom_colors tuple cannot be appended to."""
+        palette = CharacterColorPalette(
+            character_id="test",
+            hair="#FF9900",
+            skin="#FFCC99",
+            eyes="#4477EE",
+            outfit="#FFCC00",
+            custom_colors={"cape": "#FF0000"},
+        )
+        with pytest.raises(AttributeError):
+            palette.custom_colors.append(("sword", "#AAAAAA"))
+
+    def test_custom_colors_nested_mutation_protected(self) -> None:
+        """Test that nested tuples cannot be modified."""
+        palette = CharacterColorPalette(
+            character_id="test",
+            hair="#FF9900",
+            skin="#FFCC99",
+            eyes="#4477EE",
+            outfit="#FFCC00",
+            custom_colors={"cape": "#FF0000"},
+        )
+        # Get the first tuple
+        first_entry = palette.custom_colors[0]
+        # Try to modify it (tuples are immutable)
+        with pytest.raises(TypeError):
+            first_entry[0] = "new_key"
+
+    def test_source_dict_modification_does_not_affect_palette(self) -> None:
+        """Test that modifying source dict doesn't affect palette."""
+        source_dict = {"cape": "#FF0000"}
+        palette = CharacterColorPalette(
+            character_id="test",
+            hair="#FF9900",
+            skin="#FFCC99",
+            eyes="#4477EE",
+            outfit="#FFCC00",
+            custom_colors=source_dict,
+        )
+
+        # Modify source
+        source_dict["sword"] = "#AAAAAA"
+
+        # Palette should be unaffected
+        assert len(palette.custom_colors) == 1
+
+    def test_deterministic_ordering(self) -> None:
+        """Test that custom_colors is always sorted for determinism."""
+        # Pass in reverse order
+        palette = CharacterColorPalette(
+            character_id="test",
+            hair="#FF9900",
+            skin="#FFCC99",
+            eyes="#4477EE",
+            outfit="#FFCC00",
+            custom_colors={"zulu": "#111111", "alpha": "#AAAAAA"},
+        )
+
+        # Should be sorted alphabetically
+        assert palette.custom_colors[0][0] == "alpha"
+        assert palette.custom_colors[1][0] == "zulu"
 
 
 class TestSerialization:
@@ -278,7 +357,8 @@ class TestSerialization:
         assert data["eyes"] == "#4477EE"
         assert data["outfit"] == "#FFCC00"
         assert data["accessories"] is None
-        assert data["custom_colors"] == {}
+        # custom_colors is now a tuple
+        assert data["custom_colors"] == ()
 
     def test_model_dump_json(self) -> None:
         """Test model_dump_json serialization."""
