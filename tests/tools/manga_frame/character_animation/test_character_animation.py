@@ -309,6 +309,21 @@ class TestBuildCharacterAnimationBindings:
                 references=references,
             )
 
+    def test_negative_frame_index_rejected(
+        self,
+        basic_input: CharacterAnimationInput,
+    ) -> None:
+        """Test that negative frame index is rejected."""
+        references = (
+            MockReference(character_id="char_1", frame_index=-1),
+        )
+
+        with pytest.raises(ValueError, match="cannot be negative"):
+            build_character_animation_bindings(
+                input_contract=basic_input,
+                references=references,
+            )
+
     def test_palette_association(
         self,
         basic_input: CharacterAnimationInput,

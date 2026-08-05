@@ -331,11 +331,8 @@ def build_character_animation_bindings(
     bindings: list[CharacterAnimationBinding] = []
 
     for ref in references:
-        # Validate frame index
-        if ref.frame_index > max_frame:
-            raise ValueError(
-                f"frame_index {ref.frame_index} exceeds frame_count {input_contract.frame_count}"
-            )
+        # Validate frame index (handles negative and out-of-bounds)
+        _validate_frame_index(ref.frame_index, max_frame)
 
         # Create target
         # Note: layer_index is Z-order int from Frame, converted to str for target
