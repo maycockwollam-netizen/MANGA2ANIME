@@ -121,7 +121,7 @@ Represents metadata about one extracted layer.
 class LayerDescriptor(BaseModel):
     """Represents metadata about one extracted layer."""
 
-    layer_id: str = Field(min_length=1, description="Unique layer identifier")
+    layer_id: str = Field(min_length=1, description="Semantic layer identifier (name/label)")
     category: LayerCategory = Field(
         default=LayerCategory.UNKNOWN,
         description="Structural category of the layer"
@@ -132,9 +132,31 @@ class LayerDescriptor(BaseModel):
 ```
 
 **Validation:**
-- `layer_id` must be non-empty after trimming
+- `layer_id` must be non-empty after trimming (uniqueness NOT enforced)
 - `layer_index` must be >= 0
 - No duplicate `layer_index` values in a `LayerExtractionResult`
+
+#### Layer Identity Semantics
+
+This module distinguishes between two types of layer identification:
+
+| Field | Purpose | Uniqueness | Use Case |
+|-------|---------|------------|----------|
+| `layer_id` | Semantic name/label | NOT enforced | Meaningful names like "background", "char_1" |
+| `layer_index` | Z-order identifier | Enforced unique | Unique identification, ordering |
+
+**Important:** Multiple `LayerDescriptor` objects MAY share the same `layer_id` value
+if they have different `layer_index` values. This is valid and represents layers
+with the same semantic name at different z-order positions.
+
+**Example valid usage:**
+```python
+# Two layers with same layer_id but different layer_index
+LayerDescriptor(layer_id="character", layer_index=1)
+LayerDescriptor(layer_id="character", layer_index=5)
+```
+
+For unique identification, use `layer_index`. For semantic labeling, use `layer_id`.
 
 #### ExtractionConfig
 
@@ -288,6 +310,8 @@ The layer extraction contracts do NOT:
 1. **No extraction implementation** - Contracts are defined but no actual extraction logic exists
 2. **No image processing** - This is a contract-only module
 3. **No AI/ML integration** - Future implementations may add this
+4. **No integration with frame models** - There is no automatic conversion from `LayerExtractionResult` to `FrameSequence` or `FrameLayer`. This is a future integration point.
+5. **`LayerCategory.UNKNOWN` limitation** - `LayerCategory.UNKNOWN` exists in this module but `tools.frame.models.LayerType` has no UNKNOWN value. A future integration must explicitly decide how UNKNOWN maps to `FrameLayer.layer_type` (e.g., default to a specific type, raise an error, or extend `LayerType`).
 
 ## Future Extension Points
 
@@ -299,10 +323,20 @@ Future modules may implement:
 
 ### Integration Points
 
-Future integration may connect:
-- Layer extraction to manga parsing
-- Extracted layers to frame construction
-- Character tracking across pages
+**IMPORTANT:** The following integration points are NOT currently implemented:
+
+1. **LayerExtractionResult → FrameSequence/FrameLayer**
+   - No automatic conversion exists
+   - Future implementation must decide:
+     - How to map `LayerDescriptor` fields to `FrameLayer`
+     - How to handle `LayerCategory.UNKNOWN` → `LayerType` mapping
+     - How to combine multiple pages into a `FrameSequence`
+
+2. **Layer extraction to manga parsing**
+   - Future integration connects manga parser output to layer extraction input
+
+3. **Character tracking across pages**
+   - Uses `layer_id` from `CharacterAppearance`, not from layer extraction
 
 ### Algorithm Options
 

@@ -134,7 +134,7 @@ class LayerDescriptor(BaseModel):
     - Extraction metadata
 
     Attributes:
-        layer_id: Unique identifier for the layer
+        layer_id: Semantic layer identifier (name/label, not unique)
         category: Structural category of the layer
         layer_index: Z-order index for layer stacking
         source_path: Optional path to the layer source
@@ -144,11 +144,19 @@ class LayerDescriptor(BaseModel):
         - layer_id must be non-empty after trimming
         - layer_index must be >= 0
         - No duplicate layer_index values in a LayerExtractionResult
+
+    Layer Identity Semantics:
+        - layer_id is a SEMANTIC NAME/label (e.g., "background", "char_1", "foreground")
+        - layer_id uniqueness is NOT enforced - multiple layers may share the same layer_id
+          if they have different layer_index values
+        - layer_index is the UNIQUE Z-ORDER identifier within a LayerExtractionResult
+        - Use layer_index when you need unique identification
+        - Use layer_id when you need semantic naming/labeling
     """
 
     layer_id: str = Field(
         min_length=1,
-        description="Unique layer identifier"
+        description="Semantic layer identifier (name/label, uniqueness not enforced)"
     )
     category: LayerCategory = Field(
         default=LayerCategory.UNKNOWN,
