@@ -310,8 +310,7 @@ The layer extraction contracts do NOT:
 1. **No extraction implementation** - Contracts are defined but no actual extraction logic exists
 2. **No image processing** - This is a contract-only module
 3. **No AI/ML integration** - Future implementations may add this
-4. **No integration with frame models** - There is no automatic conversion from `LayerExtractionResult` to `FrameSequence` or `FrameLayer`. This is a future integration point.
-5. **`LayerCategory.UNKNOWN` limitation** - `LayerCategory.UNKNOWN` exists in this module but `tools.frame.models.LayerType` has no UNKNOWN value. A future integration must explicitly decide how UNKNOWN maps to `FrameLayer.layer_type` (e.g., default to a specific type, raise an error, or extend `LayerType`).
+4. **`LayerCategory.UNKNOWN` limitation** - When converting to `FrameLayer`, UNKNOWN category requires explicit handling via `skip_unknown_categories` option or raises `UnknownLayerCategoryError`
 
 ## Future Extension Points
 
@@ -325,12 +324,11 @@ Future modules may implement:
 
 **IMPORTANT:** The following integration points are NOT currently implemented:
 
-1. **LayerExtractionResult → FrameSequence/FrameLayer**
-   - No automatic conversion exists
-   - Future implementation must decide:
-     - How to map `LayerDescriptor` fields to `FrameLayer`
-     - How to handle `LayerCategory.UNKNOWN` → `LayerType` mapping
-     - How to combine multiple pages into a `FrameSequence`
+1. **LayerExtractionResult → FrameSequence/FrameLayer** ✓ IMPLEMENTED
+   - Implemented in `tools/manga_frame/layer_extraction_to_frame.py`
+   - Converts `LayerExtractionResult` tuples to `FrameSequence`
+   - Maps `LayerDescriptor` fields to `FrameLayer`
+   - Handles `LayerCategory.UNKNOWN` → `LayerType` via explicit skip/error policy
 
 2. **Layer extraction to manga parsing**
    - Future integration connects manga parser output to layer extraction input
@@ -362,3 +360,5 @@ Future implementations may support:
 | Tests | Implemented |
 | Documentation | This document |
 | Extraction Engine | NOT IMPLEMENTED |
+| LayerExtraction → Frame Integration | Implemented |
+| LayerCategory.UNKNOWN → LayerType Handling | Implemented |
