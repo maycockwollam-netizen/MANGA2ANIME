@@ -953,3 +953,190 @@ class TestPlaybackStateConsistency:
 
         expected = 12 / 24.0
         assert state.current_time_seconds == pytest.approx(expected)
+
+
+# ============================================================================
+# Test Frame Iterator
+# ============================================================================
+
+
+class TestFrameIterator:
+    """Tests for frames() iterator method."""
+
+    def test_frames_default_iterates_full_range(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() iterates from 0 to duration_frames inclusive."""
+        # loaded_orchestrator has duration_frames == 24
+        frames_list = list(loaded_orchestrator.frames())
+
+        # Should yield frames 0 through 24 inclusive = 25 frames
+        assert len(frames_list) == 25
+        assert frames_list[0][0] == 0
+        assert frames_list[-1][0] == 24
+
+    def test_frames_explicit_start(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames(start_frame=N) iterates from N to duration."""
+        frames_list = list(loaded_orchestrator.frames(start_frame=5))
+
+        assert len(frames_list) == 20  # 5 through 24 inclusive
+        assert frames_list[0][0] == 5
+        assert frames_list[-1][0] == 24
+
+    def test_frames_explicit_end(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames(end_frame=N) iterates from 0 to N."""
+        frames_list = list(loaded_orchestrator.frames(end_frame=10))
+
+        assert len(frames_list) == 11  # 0 through 10 inclusive
+        assert frames_list[0][0] == 0
+        assert frames_list[-1][0] == 10
+
+    def test_frames_start_and_end(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames(start_frame, end_frame) iterates the range."""
+        frames_list = list(loaded_orchestrator.frames(start_frame=5, end_frame=10))
+
+        assert len(frames_list) == 6  # 5 through 10 inclusive
+        assert frames_list[0][0] == 5
+        assert frames_list[-1][0] == 10
+
+    def test_frames_single_frame(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames(start_frame=N, end_frame=N) yields exactly one frame."""
+        frames_list = list(loaded_orchestrator.frames(start_frame=12, end_frame=12))
+
+        assert len(frames_list) == 1
+        assert frames_list[0][0] == 12
+
+    def test_frames_empty_range_when_start_greater_than_end(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() returns empty iterator when start > end."""
+        frames_list = list(loaded_orchestrator.frames(start_frame=10, end_frame=5))
+
+        assert len(frames_list) == 0
+
+    def test_frames_negative_start_raises(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() raises InvalidFrameError for negative start_frame."""
+        from runtime.animation import InvalidFrameError
+
+        with pytest.raises(InvalidFrameError, match="start_frame.*cannot be negative"):
+            list(loaded_orchestrator.frames(start_frame=-1))
+
+    def test_frames_negative_end_raises(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() raises InvalidFrameError for negative end_frame."""
+        from runtime.animation import InvalidFrameError
+
+        with pytest.raises(InvalidFrameError, match="end_frame.*cannot be negative"):
+            list(loaded_orchestrator.frames(end_frame=-1))
+
+    def test_frames_start_beyond_duration_raises(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() raises InvalidFrameError when start_frame > duration."""
+        from runtime.animation import InvalidFrameError
+
+        with pytest.raises(InvalidFrameError, match="start_frame.*exceeds duration"):
+            list(loaded_orchestrator.frames(start_frame=100))
+
+    def test_frames_end_beyond_duration_raises(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() raises InvalidFrameError when end_frame > duration."""
+        from runtime.animation import InvalidFrameError
+
+        with pytest.raises(InvalidFrameError, match="end_frame.*exceeds duration"):
+            list(loaded_orchestrator.frames(end_frame=100))
+
+    def test_frames_empty_runtime_yields_frame_0(
+        self, orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frames() on empty runtime yields frame 0 only."""
+        # Before loading, duration_frames == 0
+        assert orchestrator.duration_frames == 0
+
+        frames_list = list(orchestrator.frames())
+
+        # Frame 0 is valid even when duration is 0
+        assert len(frames_list) == 1
+        assert frames_list[0][0] == 0
+
+    def test_frames_evaluation_matches_evaluate_at_frame(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that each yielded transform matches evaluate_at_frame()."""
+        for frame_index, transforms in loaded_orchestrator.frames(0, 10):
+            expected = loaded_orchestrator.evaluate_at_frame(frame_index)
+            assert transforms == expected
+
+    def test_frames_deterministic(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that repeated iteration produces identical results."""
+        result1 = list(loaded_orchestrator.frames(0, 10))
+        result2 = list(loaded_orchestrator.frames(0, 10))
+
+        assert result1 == result2
+
+    def test_frames_no_playback_mutation(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that frames() does not modify playback state."""
+        loaded_orchestrator.seek(10)
+
+        before_state = loaded_orchestrator.playback_state
+        before_frame = loaded_orchestrator.current_frame
+
+        # Iterate through frames
+        list(loaded_orchestrator.frames(0, 5))
+
+        after_state = loaded_orchestrator.playback_state
+        after_frame = loaded_orchestrator.current_frame
+
+        assert before_state == after_state
+        assert before_frame == after_frame
+
+    def test_frames_lazy_iterator(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that frames() returns a generator, not a list."""
+        result = loaded_orchestrator.frames(0, 5)
+
+        # Should be a generator, not a list
+        import types
+
+        assert isinstance(result, types.GeneratorType)
+
+    def test_frames_generator_exhaustion(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that iterator stops after last frame."""
+        result = loaded_orchestrator.frames(0, 5)
+
+        frames_yielded = []
+        for frame_index, _ in result:
+            frames_yielded.append(frame_index)
+
+        assert frames_yielded == [0, 1, 2, 3, 4, 5]
+
+    def test_frames_snapshot_semantics(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that yielded transforms are independent snapshots."""
+        frames_list = list(loaded_orchestrator.frames(0, 5))
+
+        # Each frame should be independent
+        for frame_index, transforms in frames_list:
+            assert frame_index in [0, 1, 2, 3, 4, 5]
+            # Transform dict should be non-None for valid clips
+            assert isinstance(transforms, dict)

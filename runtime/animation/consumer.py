@@ -30,9 +30,10 @@ This module does NOT:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
-from runtime.animation import AnimationRuntime
+from runtime.animation import AnimationRuntime, InvalidFrameError
 from tools.frame.animation import AnimationClip
 from tools.frame.models import FrameTransform
 from tools.manga_frame.character_animation import (
@@ -305,6 +306,75 @@ class AnimationOrchestrator:
             Dictionary mapping clip_id to FrameTransform
         """
         return self._runtime.evaluate_at_frame(self._current_frame)
+
+    def frames(
+        self,
+        start_frame: int = 0,
+        end_frame: int | None = None,
+    ) -> Iterator[tuple[int, dict[str, FrameTransform]]]:
+        """Iterate through a frame range and evaluate each frame.
+
+        This is a deterministic, read-only evaluation operation that does not
+        modify playback state (current_frame, current_time, playback_state).
+
+        By default, iterates from frame 0 through duration_frames (inclusive).
+        If end_frame is None, uses duration_frames as the upper bound.
+
+        Args:
+            start_frame: Starting frame index (inclusive). Must be >= 0.
+            end_frame: Ending frame index (inclusive). Must be >= start_frame.
+                If None, uses duration_frames.
+
+        Yields:
+            Tuple of (frame_index, transforms) for each frame in the range.
+
+        Raises:
+            InvalidFrameError: If start_frame < 0
+            InvalidFrameError: If end_frame < 0
+            InvalidFrameError: If start_frame > duration_frames
+            InvalidFrameError: If end_frame > duration_frames
+            ValueError: If start_frame > end_frame
+
+        Example:
+            >>> for frame_index, transforms in orchestrator.frames():
+            ...     render_frame(frame_index, transforms)
+            >>>
+            >>> for frame_index, transforms in orchestrator.frames(5, 10):
+            ...     print(f"Frame {frame_index}")
+        """
+        duration = self.duration_frames
+
+        # Validate start_frame
+        if start_frame < 0:
+            raise InvalidFrameError(
+                f"start_frame {start_frame} cannot be negative"
+            )
+
+        if start_frame > duration:
+            raise InvalidFrameError(
+                f"start_frame {start_frame} exceeds duration {duration}"
+            )
+
+        # Determine end_frame
+        if end_frame is None:
+            end_frame = duration
+        elif end_frame < 0:
+            raise InvalidFrameError(
+                f"end_frame {end_frame} cannot be negative"
+            )
+        elif end_frame > duration:
+            raise InvalidFrameError(
+                f"end_frame {end_frame} exceeds duration {duration}"
+            )
+
+        # Validate range
+        if start_frame > end_frame:
+            # Empty range - return empty iterator
+            return
+
+        # Yield frames lazily
+        for frame_index in range(start_frame, end_frame + 1):
+            yield (frame_index, self._runtime.evaluate_at_frame(frame_index))
 
     def load(
         self,
