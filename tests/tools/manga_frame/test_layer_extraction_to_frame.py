@@ -381,6 +381,41 @@ class TestUnknownCategory:
         assert "u1" in output.skipped_layers
         assert "u2" in output.skipped_layers
 
+    def test_all_unknown_layers_produces_empty_frame(self) -> None:
+        """Test that skipping all UNKNOWN layers produces an empty frame.
+
+        Empty frames are valid according to the Frame model contract.
+        This documents the expected behavior when all layers in a result are UNKNOWN.
+        """
+        result = LayerExtractionResult(
+            source_path=Path("/manga/page1.png"),
+            page_number=0,
+            layers=(
+                LayerDescriptor(layer_id="u1", category=LayerCategory.UNKNOWN, layer_index=0),
+                LayerDescriptor(layer_id="u2", category=LayerCategory.UNKNOWN, layer_index=1),
+            ),
+        )
+
+        input_contract = LayerExtractionToFrameInput(
+            extraction_results=(result,),
+            sequence_id="test_seq",
+            skip_unknown_categories=True,
+        )
+
+        output = convert_layer_extraction_to_frames(input_contract)
+
+        # Frame should exist with empty layers
+        assert len(output.sequence.frames) == 1
+        assert len(output.sequence.frames[0].layers) == 0
+
+        # Metadata should accurately reflect the situation
+        assert output.metadata.layers_converted == 0
+        assert output.metadata.layers_filtered == 2
+        assert output.skipped_layers == ("u1", "u2")
+
+        # Source path should still be preserved
+        assert output.sequence.frames[0].source_path == Path("/manga/page1.png")
+
 
 class TestOrdering:
     """Tests for layer ordering."""
@@ -485,6 +520,145 @@ class TestValidation:
                 ),
             )
 
+    def test_duplicate_page_number_rejected(self) -> None:
+        """Test that duplicate page_number values are rejected."""
+        from tools.manga_frame.layer_extraction_to_frame import DuplicatePageNumberError
+
+        # Two results with same page_number
+        results = (
+            LayerExtractionResult(
+                source_path=Path("/manga/page1.png"),
+                page_number=5,
+                layers=(
+                    LayerDescriptor(
+                        layer_id="layer",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+            LayerExtractionResult(
+                source_path=Path("/manga/page2.png"),
+                page_number=5,  # Same as first!
+                layers=(
+                    LayerDescriptor(
+                        layer_id="layer",
+                        category=LayerCategory.CHARACTER,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+        )
+
+        input_contract = LayerExtractionToFrameInput(
+            extraction_results=results,
+            sequence_id="test_seq",
+        )
+
+        with pytest.raises(DuplicatePageNumberError, match=r"\[5\]"):
+            convert_layer_extraction_to_frames(input_contract)
+
+    def test_multiple_duplicate_page_numbers_rejected(self) -> None:
+        """Test that multiple duplicate page_numbers are all detected."""
+        from tools.manga_frame.layer_extraction_to_frame import DuplicatePageNumberError
+
+        results = (
+            LayerExtractionResult(
+                source_path=Path("/manga/page1.png"),
+                page_number=1,
+                layers=(
+                    LayerDescriptor(
+                        layer_id="l",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+            LayerExtractionResult(
+                source_path=Path("/manga/page2.png"),
+                page_number=2,
+                layers=(
+                    LayerDescriptor(
+                        layer_id="l",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+            LayerExtractionResult(
+                source_path=Path("/manga/page3.png"),
+                page_number=1,  # Duplicate of first
+                layers=(
+                    LayerDescriptor(
+                        layer_id="l",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+            LayerExtractionResult(
+                source_path=Path("/manga/page4.png"),
+                page_number=2,  # Duplicate of second
+                layers=(
+                    LayerDescriptor(
+                        layer_id="l",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+        )
+
+        input_contract = LayerExtractionToFrameInput(
+            extraction_results=results,
+            sequence_id="test_seq",
+        )
+
+        with pytest.raises(DuplicatePageNumberError) as exc_info:
+            convert_layer_extraction_to_frames(input_contract)
+
+        # Both duplicates should be reported
+        error = exc_info.value
+        assert 1 in error.duplicated_pages
+        assert 2 in error.duplicated_pages
+
+    def test_unique_page_numbers_succeed(self) -> None:
+        """Test that unique page_numbers still convert successfully."""
+        results = (
+            LayerExtractionResult(
+                source_path=Path("/manga/page1.png"),
+                page_number=0,
+                layers=(
+                    LayerDescriptor(
+                        layer_id="layer",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+            LayerExtractionResult(
+                source_path=Path("/manga/page2.png"),
+                page_number=1,
+                layers=(
+                    LayerDescriptor(
+                        layer_id="layer",
+                        category=LayerCategory.CHARACTER,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+        )
+
+        input_contract = LayerExtractionToFrameInput(
+            extraction_results=results,
+            sequence_id="test_seq",
+        )
+
+        output = convert_layer_extraction_to_frames(input_contract)
+        assert len(output.sequence.frames) == 2
+        assert output.sequence.frames[0].frame_index == 0
+        assert output.sequence.frames[1].frame_index == 1
+
 
 class TestImmutability:
     """Tests for immutability guarantees."""
@@ -541,6 +715,50 @@ class TestImmutability:
         # FrameSequence should be frozen
         with pytest.raises((TypeError, ValueError)):
             output.sequence.sequence_id = "new_id"  # type: ignore[misc]
+
+    def test_input_unchanged_after_failed_validation(self) -> None:
+        """Test that inputs are not modified when validation fails."""
+        from tools.manga_frame.layer_extraction_to_frame import DuplicatePageNumberError
+
+        # Create a list of results that will fail validation
+        results = (
+            LayerExtractionResult(
+                source_path=Path("/manga/page1.png"),
+                page_number=5,
+                layers=(
+                    LayerDescriptor(
+                        layer_id="l",
+                        category=LayerCategory.BACKGROUND,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+            LayerExtractionResult(
+                source_path=Path("/manga/page2.png"),
+                page_number=5,  # Duplicate!
+                layers=(
+                    LayerDescriptor(
+                        layer_id="l",
+                        category=LayerCategory.CHARACTER,
+                        layer_index=0,
+                    ),
+                ),
+            ),
+        )
+
+        input_contract = LayerExtractionToFrameInput(
+            extraction_results=results,
+            sequence_id="test_seq",
+        )
+
+        # Attempt conversion - should fail
+        with pytest.raises(DuplicatePageNumberError):
+            convert_layer_extraction_to_frames(input_contract)
+
+        # Verify original results are unchanged
+        assert input_contract.extraction_results[0].page_number == 5
+        assert input_contract.extraction_results[1].page_number == 5
+        assert len(input_contract.extraction_results) == 2
 
 
 class TestDeterminism:

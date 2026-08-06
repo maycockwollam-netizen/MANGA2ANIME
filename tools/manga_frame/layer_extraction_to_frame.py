@@ -199,6 +199,52 @@ class LayerExtractionToFrameOutput:
 
 
 # ============================================================================
+# Validation
+# ============================================================================
+
+
+class DuplicatePageNumberError(ValueError):
+    """Raised when duplicate page_number values are detected in extraction results.
+
+    Frame.frame_index must be unique within a FrameSequence.
+    """
+
+    def __init__(self, duplicated_pages: tuple[int, ...]) -> None:
+        self.duplicated_pages = duplicated_pages
+        pages_str = ", ".join(str(p) for p in duplicated_pages)
+        super().__init__(
+            f"Duplicate page_number values not allowed: [{pages_str}]. "
+            "Each LayerExtractionResult must have a unique page_number "
+            "to produce unique Frame.frame_index values."
+        )
+
+
+def _validate_unique_page_numbers(
+    results: tuple[LayerExtractionResult, ...],
+) -> None:
+    """Validate that all page_number values are unique.
+
+    Args:
+        results: Extraction results to validate
+
+    Raises:
+        DuplicatePageNumberError: If any page_number values are duplicated
+    """
+    page_numbers = [r.page_number for r in results]
+    seen: set[int] = set()
+    duplicates: list[int] = []
+
+    for page_num in page_numbers:
+        if page_num in seen:
+            duplicates.append(page_num)
+        else:
+            seen.add(page_num)
+
+    if duplicates:
+        raise DuplicatePageNumberError(tuple(sorted(set(duplicates))))
+
+
+# ============================================================================
 # Conversion Functions
 # ============================================================================
 
@@ -319,6 +365,7 @@ def convert_layer_extraction_to_frames(
 
     Raises:
         ValueError: If extraction_results is empty
+        DuplicatePageNumberError: If page_number values are not unique
         UnknownLayerCategoryError: If UNKNOWN category encountered and skip is False
     """
     results = input_contract.extraction_results
@@ -326,6 +373,9 @@ def convert_layer_extraction_to_frames(
     # Validate we have results to convert
     if not results:
         raise ValueError("Cannot convert empty extraction_results")
+
+    # Validate unique page numbers
+    _validate_unique_page_numbers(results)
 
     # Convert each result to a frame
     frames: list[Frame] = []
@@ -447,6 +497,7 @@ __all__ = [
     "LayerExtractionToFrameMetadata",
     "LayerExtractionToFrameOutput",
     # Exceptions
+    "DuplicatePageNumberError",
     "UnknownLayerCategoryError",
     # Functions
     "convert_layer_extraction_to_frames",
