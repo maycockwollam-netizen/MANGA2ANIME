@@ -506,3 +506,450 @@ class TestIntegration:
         # Verify transforms are different at different frames
         # (interpolated position_x should be different)
         assert transforms_at_0 != transforms_at_12 or transforms_at_0 == {}
+
+
+# ============================================================================
+# Test Invariant: current_time == current_frame / frame_rate
+# ============================================================================
+
+
+class TestInvariantConsistency:
+    """Tests verifying the invariant _current_time == _current_frame / frame_rate.
+
+    This invariant must hold after any operation that changes playback state.
+    The implementation should derive _current_time from _current_frame, not
+    accumulate independently, to avoid floating-point drift.
+    """
+
+    def _assert_invariant(self, orchestrator: AnimationOrchestrator) -> None:
+        """Verify _current_time == _current_frame / frame_rate."""
+        expected_time = orchestrator.current_frame / orchestrator.frame_rate
+        actual_time = orchestrator.playback_state.current_time_seconds
+        assert actual_time == pytest.approx(expected_time), (
+            f"Invariant violated: current_time={actual_time} "
+            f"!= current_frame/frame_rate={expected_time}"
+        )
+
+    def test_invariant_holds_at_initial_state(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds at initial state (frame 0)."""
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_seek(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after seek()."""
+        loaded_orchestrator.seek(5)
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.seek(24)
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.seek(0)
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_seek_negative(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after seek to negative (clamps to 0)."""
+        loaded_orchestrator.seek(-100)
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_seek_beyond_duration(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after seek beyond duration (clamps to max)."""
+        loaded_orchestrator.seek(999)
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_update(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after update()."""
+        loaded_orchestrator.seek(0)
+        loaded_orchestrator.update(0.5)
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.update(0.25)
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.update(0.25)
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_update_clamps_at_duration(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after update clamps at duration."""
+        loaded_orchestrator.seek(20)
+        loaded_orchestrator.update(1.0)  # Would go to 44, clamped to 24
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_reset(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after reset()."""
+        loaded_orchestrator.seek(12)
+        loaded_orchestrator.update(0.5)
+        loaded_orchestrator.reset()
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_load(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after load()."""
+        loaded_orchestrator.seek(12)
+        loaded_orchestrator.update(0.5)
+
+        # Load new animation
+        target = CharacterAnimationTarget(
+            character_id="new", layer_id="1", sequence_id="new"
+        )
+        binding = CharacterAnimationBinding(
+            target=target, frame_index=0, palette_id=None
+        )
+        output = CharacterAnimationOutput(
+            sequence_id="new",
+            bindings=(binding,),
+            metadata=CharacterAnimationMetadata(
+                bindings_created=1,
+                characters_bound=1,
+                palettes_available=0,
+                palettes_missing=1,
+            ),
+        )
+        transforms = CharacterTransformInputSet(
+            transforms=(
+                CharacterTransformInput(
+                    character_id="new", frame_index=0,
+                    transform=FrameTransform(), interpolation=InterpolationType.LINEAR,
+                ),
+            ),
+        )
+        loaded_orchestrator.load(output, transforms)
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_holds_after_reload(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after reload()."""
+        loaded_orchestrator.seek(10)
+        loaded_orchestrator.update(0.5)
+
+        # Reload with same animation data
+        target = CharacterAnimationTarget(
+            character_id="hero", layer_id="1", sequence_id="intro"
+        )
+        binding = CharacterAnimationBinding(
+            target=target, frame_index=0, palette_id=None
+        )
+        binding2 = CharacterAnimationBinding(
+            target=target, frame_index=24, palette_id=None
+        )
+        output = CharacterAnimationOutput(
+            sequence_id="intro",
+            bindings=(binding, binding2),
+            metadata=CharacterAnimationMetadata(
+                bindings_created=2,
+                characters_bound=1,
+                palettes_available=0,
+                palettes_missing=1,
+            ),
+        )
+        transforms = CharacterTransformInputSet(
+            transforms=(
+                CharacterTransformInput(
+                    character_id="hero", frame_index=0,
+                    transform=FrameTransform(), interpolation=InterpolationType.LINEAR,
+                ),
+                CharacterTransformInput(
+                    character_id="hero", frame_index=24,
+                    transform=FrameTransform(), interpolation=InterpolationType.LINEAR,
+                ),
+            ),
+        )
+        loaded_orchestrator.reload(output, transforms)
+        self._assert_invariant(loaded_orchestrator)
+
+    def test_invariant_after_mixed_operations(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test invariant holds after mixed seek/update/reset sequences."""
+        loaded_orchestrator.seek(5)
+        loaded_orchestrator.update(0.25)
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.seek(15)
+        loaded_orchestrator.update(0.1)
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.reset()
+        self._assert_invariant(loaded_orchestrator)
+
+        loaded_orchestrator.seek(24)
+        loaded_orchestrator.update(0.5)  # Clamp
+        self._assert_invariant(loaded_orchestrator)
+
+
+# ============================================================================
+# Test Floating-Point Determinism
+# ============================================================================
+
+
+class TestFloatingPointDeterminism:
+    """Tests for deterministic behavior with repeated small updates.
+
+    Verifies that floating-point accumulation does not cause unexpected frame
+    jumps or inconsistent behavior.
+    """
+
+    def test_repeated_small_updates_deterministic(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test many repeated small updates produce deterministic results."""
+        loaded_orchestrator.seek(0)
+
+        # Update 24 times with 1/24 second each
+        expected_frame = 0
+        for _ in range(24):
+            loaded_orchestrator.update(1.0 / 24.0)
+            expected_frame += 1
+
+        assert loaded_orchestrator.current_frame == 24
+
+    def test_many_small_updates_no_frame_jumps(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that many small updates don't cause frame skipping or duplication."""
+        loaded_orchestrator.seek(0)
+
+        frames_seen: list[int] = []
+        for _ in range(100):
+            old_frame = loaded_orchestrator.current_frame
+            loaded_orchestrator.update(1.0 / 24.0)
+            new_frame = loaded_orchestrator.current_frame
+
+            # Frame should advance by 0 or 1 (never skip or go backward)
+            assert new_frame >= old_frame, (
+                f"Frame went backward: {old_frame} -> {new_frame}"
+            )
+            frames_seen.append(new_frame)
+
+        # Verify frames 1-24 appear exactly once (before clamping starts)
+        # After frame 24, all subsequent updates stay at 24
+        expected_frames = list(range(1, 25))
+        for frame in expected_frames:
+            assert frame in frames_seen, f"Frame {frame} not seen"
+
+    def test_fractional_accumulation_accurate(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that accumulated time matches expected frame after many updates."""
+        loaded_orchestrator.seek(0)
+
+        # 24 updates of 1/24 second each = 1 second = 24 frames
+        for _ in range(24):
+            loaded_orchestrator.update(1.0 / 24.0)
+
+        assert loaded_orchestrator.current_frame == 24
+
+    def test_deterministic_same_sequence(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that running the same update sequence produces same result."""
+        def run_sequence() -> int:
+            orch = AnimationOrchestrator(frame_rate=24.0)
+            target = CharacterAnimationTarget(
+                character_id="h", layer_id="1", sequence_id="s"
+            )
+            output = CharacterAnimationOutput(
+                sequence_id="s",
+                bindings=(
+                    CharacterAnimationBinding(
+                        target=target, frame_index=0, palette_id=None
+                    ),
+                    CharacterAnimationBinding(
+                        target=target, frame_index=24, palette_id=None
+                    ),
+                ),
+                metadata=CharacterAnimationMetadata(
+                    bindings_created=2,
+                    characters_bound=1,
+                    palettes_available=0,
+                    palettes_missing=1,
+                ),
+            )
+            transforms = CharacterTransformInputSet(
+                transforms=(
+                    CharacterTransformInput(
+                        character_id="h", frame_index=0,
+                        transform=FrameTransform(), interpolation=InterpolationType.LINEAR,
+                    ),
+                    CharacterTransformInput(
+                        character_id="h", frame_index=24,
+                        transform=FrameTransform(), interpolation=InterpolationType.LINEAR,
+                    ),
+                ),
+            )
+            orch.load(output, transforms)
+            for _ in range(50):
+                orch.update(1.0 / 24.0)
+            return orch.current_frame
+
+        results = [run_sequence() for _ in range(5)]
+        assert len(set(results)) == 1, (
+            f"Non-deterministic results: {results}"
+        )
+
+
+# ============================================================================
+# Test Frame Boundary Behavior
+# ============================================================================
+
+
+class TestFrameBoundaries:
+    """Tests for frame boundary transitions and clamping behavior."""
+
+    def test_frame_boundary_just_below(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test update just below a frame boundary."""
+        loaded_orchestrator.seek(11)
+        # 0.01 second = 0.24 frames at 24fps, rounds down to 11
+        loaded_orchestrator.update(0.01)
+        assert loaded_orchestrator.current_frame == 11
+
+    def test_frame_boundary_exactly(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test update exactly at a frame boundary."""
+        loaded_orchestrator.seek(11)
+        # 1/24 second = exactly 1 frame at 24fps
+        loaded_orchestrator.update(1.0 / 24.0)
+        assert loaded_orchestrator.current_frame == 12
+
+    def test_frame_boundary_just_above(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test update just above a frame boundary."""
+        loaded_orchestrator.seek(11)
+        # 1.5/24 second = 1.5 frames, rounds to 12
+        loaded_orchestrator.update(1.5 / 24.0)
+        assert loaded_orchestrator.current_frame == 12
+
+    def test_duration_boundary_exactly(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test update exactly at duration boundary."""
+        loaded_orchestrator.seek(23)
+        # 1/24 second = exactly 1 frame
+        loaded_orchestrator.update(1.0 / 24.0)
+        assert loaded_orchestrator.current_frame == 24
+
+    def test_duration_boundary_just_beyond(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test update just beyond duration (clamps)."""
+        loaded_orchestrator.seek(23)
+        # 2/24 second = 2 frames, but only 1 available
+        loaded_orchestrator.update(2.0 / 24.0)
+        assert loaded_orchestrator.current_frame == 24
+
+    def test_update_after_duration_remains_at_duration(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that further updates stay at duration after clamping."""
+        loaded_orchestrator.seek(20)
+        loaded_orchestrator.update(1.0)  # Clamps to 24
+
+        assert loaded_orchestrator.current_frame == 24
+
+        # Additional updates should not change anything
+        loaded_orchestrator.update(0.5)
+        assert loaded_orchestrator.current_frame == 24
+
+        loaded_orchestrator.update(1.0)
+        assert loaded_orchestrator.current_frame == 24
+
+    def test_zero_duration_handled(self, orchestrator: AnimationOrchestrator) -> None:
+        """Test edge case where duration is 0 (no clips)."""
+        # Without loading, duration_frames = 0
+        assert orchestrator.duration_frames == 0
+
+        orchestrator.seek(5)  # Should clamp to 0
+        assert orchestrator.current_frame == 0
+
+        orchestrator.update(1.0)  # Should clamp to 0
+        assert orchestrator.current_frame == 0
+
+    def test_single_frame_animation(
+        self, orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test edge case with single-frame animation."""
+        target = CharacterAnimationTarget(
+            character_id="h", layer_id="1", sequence_id="s"
+        )
+        output = CharacterAnimationOutput(
+            sequence_id="s",
+            bindings=(
+                CharacterAnimationBinding(
+                    target=target, frame_index=0, palette_id=None
+                ),
+            ),
+            metadata=CharacterAnimationMetadata(
+                bindings_created=1,
+                characters_bound=1,
+                palettes_available=0,
+                palettes_missing=1,
+            ),
+        )
+        transforms = CharacterTransformInputSet(
+            transforms=(
+                CharacterTransformInput(
+                    character_id="h", frame_index=0,
+                    transform=FrameTransform(), interpolation=InterpolationType.LINEAR,
+                ),
+            ),
+        )
+        orchestrator.load(output, transforms)
+        assert orchestrator.duration_frames == 0
+
+        orchestrator.seek(1)
+        assert orchestrator.current_frame == 0  # Clamps to max (0)
+
+        orchestrator.update(1.0)
+        assert orchestrator.current_frame == 0  # Stays at 0
+
+
+# ============================================================================
+# Test PlaybackState Consistency
+# ============================================================================
+
+
+class TestPlaybackStateConsistency:
+    """Tests that PlaybackState always reports consistent values."""
+
+    def test_playback_state_matches_internal_state(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test PlaybackState matches internal _current_frame/_current_time."""
+        test_cases = [0, 1, 12, 23, 24]
+
+        for frame in test_cases:
+            loaded_orchestrator.seek(frame)
+            state = loaded_orchestrator.playback_state
+
+            assert state.current_frame == loaded_orchestrator._current_frame
+            assert state.current_frame == loaded_orchestrator.current_frame
+            assert state.frame_rate == loaded_orchestrator.frame_rate
+            assert state.duration_frames == loaded_orchestrator.duration_frames
+
+    def test_playback_state_time_matches_frame(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test PlaybackState.current_time_seconds == current_frame / frame_rate."""
+        loaded_orchestrator.seek(12)
+        state = loaded_orchestrator.playback_state
+
+        expected = 12 / 24.0
+        assert state.current_time_seconds == pytest.approx(expected)

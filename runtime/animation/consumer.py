@@ -269,7 +269,7 @@ class AnimationOrchestrator:
         if delta_time == 0:
             return self._current_frame
 
-        # Accumulate time
+        # Accumulate time (for frame computation)
         self._current_time += delta_time
 
         # Convert to frame using rounding (matches AnimationTimeline.frame_index_at)
@@ -279,10 +279,12 @@ class AnimationOrchestrator:
         duration = self.duration_frames
         if new_frame > duration:
             new_frame = duration
-            # Adjust current_time to match clamped frame
-            self._current_time = new_frame / self._frame_rate
 
+        # Always derive _current_time from _current_frame to avoid drift
+        # This maintains the invariant: _current_time == _current_frame / frame_rate
         self._current_frame = new_frame
+        self._current_time = self._current_frame / self._frame_rate
+
         return self._current_frame
 
     def reset(self) -> None:
