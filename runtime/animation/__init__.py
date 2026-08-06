@@ -144,6 +144,14 @@ class AnimationRuntime:
         return self._frame_rate
 
     @property
+    def duration_frames(self) -> int:
+        """Get the duration in frames from the timeline.
+
+        Returns 0 if no clips are registered.
+        """
+        return self._timeline.duration_frames
+
+    @property
     def state(self) -> RuntimeAnimationState:
         """Get immutable runtime state."""
         return RuntimeAnimationState(

@@ -80,6 +80,23 @@ class OrchestratorState:
     runtime_frame_rate: float
 
 
+@dataclass(frozen=True)
+class PlaybackState:
+    """Immutable playback state snapshot.
+
+    Attributes:
+        current_frame: Current frame position
+        duration_frames: Total frames from runtime
+        frame_rate: Frame rate for time calculations
+        current_time_seconds: Current time in seconds (derived from current_frame)
+    """
+
+    current_frame: int
+    duration_frames: int
+    frame_rate: float
+    current_time_seconds: float
+
+
 class AnimationOrchestrator:
     """Orchestrates the animation pipeline from domain contracts to runtime.
 
@@ -87,15 +104,23 @@ class AnimationOrchestrator:
         1. Converts CharacterAnimationOutput + CharacterTransformInputSet to clips
         2. Registers clips in AnimationRuntime
         3. Delegates evaluation to AnimationRuntime
+        4. Provides deterministic playback timing
 
     State Management:
         - Explicitly instantiated (not a singleton)
         - No global mutable state
         - Owns one AnimationRuntime instance
-        - Deterministic behavior
+        - Deterministic behavior (update(delta_time) pattern)
+
+    Playback Timing:
+        - current_frame tracks playback position
+        - update(delta_time) advances playback by elapsed time
+        - seek(frame_index) jumps to specific frame
+        - No wall-clock dependency - external loop provides delta_time
 
     Attributes:
         sequence_id: Sequence identifier (from CharacterAnimationOutput)
+        current_frame: Current playback frame position
 
     Example:
         >>> from tools.manga_frame.character_animation import (
@@ -116,8 +141,10 @@ class AnimationOrchestrator:
         >>> orchestrator = AnimationOrchestrator()
         >>> orchestrator.load(output, transforms)
         >>>
-        >>> # Evaluate
-        >>> result = orchestrator.evaluate_at_frame(12)
+        >>> # Playback timing
+        >>> orchestrator.seek(0)
+        >>> orchestrator.update(0.5)  # Advance 0.5 seconds
+        >>> result = orchestrator.evaluate_current_frame()
     """
 
     def __init__(
@@ -136,6 +163,9 @@ class AnimationOrchestrator:
             sequence_id="internal",  # Internal ID, not exposed
             frame_rate=frame_rate,
         )
+        # Playback state
+        self._current_frame: int = 0
+        self._current_time: float = 0.0
 
     @property
     def sequence_id(self) -> str | None:
@@ -159,6 +189,121 @@ class AnimationOrchestrator:
             runtime_frame_rate=self._frame_rate,
         )
 
+    # ========================================================================
+    # Playback Properties
+    # ========================================================================
+
+    @property
+    def current_frame(self) -> int:
+        """Get current playback frame position.
+
+        Returns:
+            Current frame index (0-based).
+        """
+        return self._current_frame
+
+    @property
+    def duration_frames(self) -> int:
+        """Get total duration in frames from runtime.
+
+        Returns:
+            Total frames (0 if no clips registered).
+        """
+        return self._runtime.duration_frames
+
+    @property
+    def playback_state(self) -> PlaybackState:
+        """Get immutable playback state snapshot.
+
+        Returns:
+            Frozen PlaybackState with current frame info.
+        """
+        return PlaybackState(
+            current_frame=self._current_frame,
+            duration_frames=self.duration_frames,
+            frame_rate=self._frame_rate,
+            current_time_seconds=self._current_time,
+        )
+
+    # ========================================================================
+    # Playback Methods
+    # ========================================================================
+
+    def seek(self, frame_index: int) -> None:
+        """Jump to specific frame.
+
+        Clamps to valid range if frame_index is out of bounds.
+
+        Args:
+            frame_index: Target frame index
+        """
+        duration = self.duration_frames
+        # Clamp to [0, duration]
+        if frame_index < 0:
+            self._current_frame = 0
+        elif frame_index > duration:
+            self._current_frame = duration
+        else:
+            self._current_frame = frame_index
+        # Sync current_time to match frame
+        self._current_time = self._current_frame / self._frame_rate
+
+    def update(self, delta_time: float) -> int:
+        """Advance playback by delta_time seconds.
+
+        Deterministic: same initial state + same delta_time = same final frame.
+        Uses rounding to nearest frame (matches AnimationTimeline semantics).
+
+        Args:
+            delta_time: Time elapsed in seconds (must be >= 0)
+
+        Returns:
+            New current_frame after update
+
+        Raises:
+            ValueError: If delta_time is negative
+        """
+        if delta_time < 0:
+            raise ValueError("delta_time cannot be negative")
+
+        if delta_time == 0:
+            return self._current_frame
+
+        # Accumulate time
+        self._current_time += delta_time
+
+        # Convert to frame using rounding (matches AnimationTimeline.frame_index_at)
+        new_frame = int(round(self._current_time * self._frame_rate))
+
+        # Clamp to duration
+        duration = self.duration_frames
+        if new_frame > duration:
+            new_frame = duration
+            # Adjust current_time to match clamped frame
+            self._current_time = new_frame / self._frame_rate
+
+        self._current_frame = new_frame
+        return self._current_frame
+
+    def reset(self) -> None:
+        """Reset playback to beginning.
+
+        Sets current_frame to 0 and current_time to 0.
+        Does not modify runtime state.
+        """
+        self._current_frame = 0
+        self._current_time = 0.0
+
+    def evaluate_current_frame(self) -> dict[str, FrameTransform]:
+        """Evaluate all clips at current playback frame.
+
+        Convenience method that delegates to runtime.
+
+        Returns:
+            Dictionary mapping clip_id to FrameTransform
+        """
+        return self._runtime.evaluate_at_frame(self._current_frame)
+
     def load(
         self,
         animation_output: CharacterAnimationOutput,
@@ -170,6 +315,7 @@ class AnimationOrchestrator:
             1. Creates AnimationClips via create_animation_clips()
             2. Clears existing runtime state
             3. Registers new clips
+            4. Resets playback to frame 0
 
         If clip creation fails, runtime state is unchanged.
 
@@ -194,6 +340,10 @@ class AnimationOrchestrator:
         self._runtime.clear()
         self._runtime.register_many(list(clips))
         self._sequence_id = animation_output.sequence_id
+
+        # Reset playback to beginning
+        self._current_frame = 0
+        self._current_time = 0.0
 
         return clips
 
@@ -321,6 +471,7 @@ __all__ = [
     # Orchestrator
     "AnimationOrchestrator",
     "OrchestratorState",
+    "PlaybackState",
     # Exceptions
     "AnimationOrchestratorError",
     "ClipCreationError",
