@@ -136,6 +136,66 @@ def build_character_animation_bindings(
     """Build structural bindings from character references to animation targets."""
 ```
 
+### Transform Input Contracts
+
+#### CharacterTransformInput
+
+Transform input for a character appearance.
+
+```python
+@dataclass(frozen=True, slots=True)
+class CharacterTransformInput:
+    """Transform input for a character appearance."""
+
+    character_id: str
+    frame_index: int
+    transform: FrameTransform
+    interpolation: InterpolationType
+```
+
+#### CharacterTransformInputSet
+
+Collection of transform inputs for a sequence.
+
+```python
+@dataclass(frozen=True)
+class CharacterTransformInputSet:
+    """Collection of transform inputs for a sequence."""
+
+    transforms: tuple[CharacterTransformInput, ...]
+    default_interpolation: InterpolationType
+```
+
+### Animation Clip Creation
+
+#### create_animation_clips
+
+Creates AnimationClip objects from character animation bindings and transforms.
+
+```python
+def create_animation_clips(
+    animation_output: CharacterAnimationOutput,
+    transform_inputs: CharacterTransformInputSet,
+) -> tuple:
+    """Create AnimationClip objects from character animation bindings and transforms."""
+```
+
+**Grouping:** One clip per unique `(character_id, layer_id)` pair.
+
+**clip_id Derivation:**
+- Uses collision-safe encoding with escaped underscores
+- `None` layer_id is represented as `"default"`
+- Examples:
+  - `("hero", "1")` → `"hero_1"`
+  - `("hero", "1_2")` → `"hero_1__2"`
+  - `("hero_1", "2")` → `"hero__1_2"` (no collision)
+
+**Transform Lookup:** By `(character_id, frame_index)` tuple.
+
+**Missing Transforms:** Frames without matching transforms use `FrameTransform()` (identity).
+
+**Palette:** `palette_id` from bindings is NOT included in clips (separate metadata).
+
 ## Mapping Rules
 
 | Source | Target | Notes |
@@ -151,14 +211,18 @@ def build_character_animation_bindings(
 
 This module intentionally does NOT implement:
 
-- **Keyframe generation** - Belongs to `tools/frame/animation`
-- **Transform interpolation** - Belongs to `tools/frame/animation`
-- **Motion calculation** - Belongs to `tools/frame/animation`
-- **AnimationClip creation** - Belongs to `tools/frame/animation`
-- **AnimationKeyframe creation** - Belongs to `tools/frame/animation`
-- **Easing functions** - Belongs to `tools/frame/animation`
-- **Frame evaluation** - Belongs to `tools/frame/animation`
-- **Timeline modification** - Belongs to `tools/frame/animation`
+- **Transform interpolation** - Performed by `tools/frame/animation`
+- **Motion calculation** - Performed by `tools/frame/animation`
+- **Easing functions** - Performed by `tools/frame/animation`
+- **Frame evaluation** - Performed by `tools/frame/animation`
+- **Timeline modification** - Performed by `tools/frame/animation`
+
+### What Was Implemented
+
+This module now implements:
+- **CharacterTransformInput** - Transform input contract
+- **CharacterTransformInputSet** - Collection of transform inputs
+- **create_animation_clips()** - Creates AnimationClip from bindings and transforms
 
 ## Validation Rules
 
@@ -254,9 +318,8 @@ The character animation integration does NOT:
 
 ## Known Limitations
 
-1. **No animation generation** - This module creates structural bindings only
-2. **No transform interpolation** - Belongs to `tools/frame/animation`
-3. **No keyframe generation** - Belongs to `tools/frame/animation`
+1. **Transform interpolation** - V1 runtime supports LINEAR only
+2. **Frame evaluation** - Performed by `tools/frame/animation`
 
 ## Future Extension Points
 
@@ -284,13 +347,14 @@ Future integration may connect:
 | CharacterAnimationMetadata | Implemented |
 | CharacterAnimationInput | Implemented |
 | CharacterAnimationOutput | Implemented |
+| CharacterTransformInput | Implemented |
+| CharacterTransformInputSet | Implemented |
 | build_character_animation_bindings | Implemented |
+| create_animation_clips | Implemented |
 | Deep Immutability | Implemented |
 | Structural Validation | Implemented |
 | Palette Preservation | Implemented |
 | Tests | Implemented |
 | Documentation | This document |
-| Keyframe Generation | NOT IMPLEMENTED |
-| Transform Interpolation | NOT IMPLEMENTED |
+| Transform Interpolation (runtime) | LINEAR only (V1) |
 | Motion Calculation | NOT IMPLEMENTED |
-| AnimationClip Creation | NOT IMPLEMENTED |

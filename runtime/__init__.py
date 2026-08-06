@@ -1,7 +1,7 @@
 """Runtime Layer.
 
 Provides execution infrastructure for Core + Integration systems.
-Handles workers, scheduling, GPU resources, and sandboxing.
+Handles workers, scheduling, GPU resources, sandboxing, and animation runtime.
 
 Dependency direction:
     core → integration → runtime

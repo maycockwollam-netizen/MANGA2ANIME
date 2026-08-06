@@ -30,7 +30,13 @@ class AnimationKeyframe(BaseModel):
     Attributes:
         frame_index: The frame number where this keyframe applies (>= 0)
         transform: The transform state at this frame
-        interpolation: How to interpolate from previous keyframe (default: LINEAR)
+        interpolation: How to interpolate from this keyframe to the next (default: LINEAR)
+
+    Note:
+        V1 Runtime Evaluation: Only InterpolationType.LINEAR is supported during
+        runtime evaluation. Other interpolation types are valid contract values
+        but will raise ValueError during evaluate_keyframe_at_frame() if used
+        between keyframes.
     """
 
     model_config = {"frozen": True}
@@ -39,7 +45,7 @@ class AnimationKeyframe(BaseModel):
     transform: FrameTransform = Field(description="Transform state at this frame")
     interpolation: InterpolationType = Field(
         default=InterpolationType.LINEAR,
-        description="Interpolation type to next keyframe",
+        description="Interpolation type to next keyframe (V1: only LINEAR is runtime-supported)",
     )
 
     @property
@@ -240,6 +246,10 @@ def evaluate_keyframe_at_frame(
     If frame_index matches a keyframe exactly, returns that keyframe's transform.
     Otherwise, interpolates between adjacent keyframes.
 
+    V1 Interpolation Support:
+        Only InterpolationType.LINEAR is supported for interpolation between
+        keyframes. Non-LINEAR interpolation types will raise ValueError.
+
     Args:
         clip: Animation clip to evaluate
         frame_index: Frame to evaluate
@@ -250,6 +260,7 @@ def evaluate_keyframe_at_frame(
 
     Raises:
         ValueError: If frame_index is out of clip range
+        ValueError: If non-LINEAR interpolation is used between keyframes (V1 limitation)
     """
     if frame_index < clip.start_frame or frame_index > clip.end_frame:
         raise ValueError(

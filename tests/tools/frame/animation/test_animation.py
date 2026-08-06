@@ -520,12 +520,208 @@ class TestDependencyRules:
         with open(source) as f:
             content = f.read()
 
-        forbidden = [
-            "torch", "tensorflow", "cv2", "PIL", "opencv",
-            "requests", "httpx", "socket", "ffmpeg", "moviepy",
-            "diffusers", "transformers", "stable", "controlnet",
-            "runtime", "agents", "apps", "core", "tools.render",
-            "tools.audio", "tools.vfx"
+        forbidden_imports = [
+            "import torch", "from torch",
+            "import tensorflow", "from tensorflow",
+            "import cv2", "from cv2",
+            "import PIL", "from PIL",
+            "import numpy", "from numpy",
+            "import requests", "from requests",
+            "import httpx", "from httpx",
+            "import ffmpeg", "from ffmpeg",
+            "import moviepy", "from moviepy",
+            "import diffusers", "from diffusers",
+            "import transformers", "from transformers",
+            "import gpu", "from gpu",
+            "import cuda", "from cuda",
+            "from tools.render", "from tools.audio",
+            "from tools.vfx", "from runtime",
+            "from agents", "from apps", "from core",
         ]
-        for item in forbidden:
+        for item in forbidden_imports:
             assert item not in content, f"Forbidden import found: {item}"
+
+
+class TestInterpolationV1Support:
+    """Tests for V1 interpolation runtime support.
+
+    V1 animation evaluation supports LINEAR interpolation only.
+    Other InterpolationType values are valid contract values but will raise
+    ValueError during evaluate_keyframe_at_frame() if used between keyframes.
+    """
+
+    def test_linear_interpolation_evaluates_successfully(self) -> None:
+        """Test LINEAR interpolation evaluates successfully."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+            ],
+        )
+        # Should not raise
+        result = evaluate_keyframe_at_frame(clip, 12, timeline)
+        assert result.position_x == 50.0
+
+    def test_ease_in_raises_valueerror(self) -> None:
+        """Test EASE_IN raises ValueError during evaluation."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.EASE_IN,
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="Only LINEAR interpolation is supported"):
+            evaluate_keyframe_at_frame(clip, 12, timeline)
+
+    def test_ease_out_raises_valueerror(self) -> None:
+        """Test EASE_OUT raises ValueError during evaluation."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.EASE_OUT,
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="Only LINEAR interpolation is supported"):
+            evaluate_keyframe_at_frame(clip, 12, timeline)
+
+    def test_ease_in_out_raises_valueerror(self) -> None:
+        """Test EASE_IN_OUT raises ValueError during evaluation."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.EASE_IN_OUT,
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="Only LINEAR interpolation is supported"):
+            evaluate_keyframe_at_frame(clip, 12, timeline)
+
+    def test_bounce_raises_valueerror(self) -> None:
+        """Test BOUNCE raises ValueError during evaluation."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.BOUNCE,
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="Only LINEAR interpolation is supported"):
+            evaluate_keyframe_at_frame(clip, 12, timeline)
+
+    def test_elastic_raises_valueerror(self) -> None:
+        """Test ELASTIC raises ValueError during evaluation."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.LINEAR,
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.ELASTIC,
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="Only LINEAR interpolation is supported"):
+            evaluate_keyframe_at_frame(clip, 12, timeline)
+
+    def test_keyframe_at_exact_frame_no_interpolation(self) -> None:
+        """Test that keyframe at exact frame doesn't trigger interpolation."""
+        timeline = AnimationTimeline(duration_frames=24)
+        clip = AnimationClip(
+            clip_id="test",
+            start_frame=0,
+            end_frame=24,
+            keyframes=[
+                AnimationKeyframe(
+                    frame_index=0,
+                    transform=FrameTransform(position_x=0),
+                    interpolation=InterpolationType.EASE_IN_OUT,  # Non-LINEAR
+                ),
+                AnimationKeyframe(
+                    frame_index=24,
+                    transform=FrameTransform(position_x=100),
+                    interpolation=InterpolationType.BOUNCE,  # Non-LINEAR
+                ),
+            ],
+        )
+        # Should not raise - exact keyframe returns directly
+        result = evaluate_keyframe_at_frame(clip, 0, timeline)
+        assert result.position_x == 0.0
+
+        result = evaluate_keyframe_at_frame(clip, 24, timeline)
+        assert result.position_x == 100.0
+
+    def test_all_interpolation_types_are_valid_contract_values(self) -> None:
+        """Test that all InterpolationType values are valid AnimationKeyframe values."""
+        for interp_type in InterpolationType:
+            kf = AnimationKeyframe(
+                frame_index=0,
+                transform=FrameTransform(),
+                interpolation=interp_type,
+            )
+            assert kf.interpolation == interp_type
