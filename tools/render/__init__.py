@@ -9,6 +9,23 @@ This module does NOT:
 - Access GPU
 - Execute animation logic
 - Manage playback state
+
+Architecture:
+    tools/frame/models.py (FrameTransform)
+            ↓
+    tools/render/__init__.py (RenderFrame)
+            ↓
+    tools/render/protocol.py (Renderer Protocol)
+            ↓
+    [Concrete Renderer Implementations]
+
+Dependency Constraints:
+    The Renderer protocol and RenderFrame must NOT depend on:
+    - runtime.animation (ANY module)
+    - AnimationRuntime internals
+    - AnimationTimeline
+    - AnimationClip
+    - tools.manga_frame
 """
 
 from __future__ import annotations
@@ -122,6 +139,23 @@ class RenderFrame:
         return len(self.transforms)
 
 
+# Renderer Exceptions - must be imported after RenderFrame to avoid circular dependency
+from tools.render.exceptions import (  # noqa: E402
+    RendererError,
+    RenderFrameError,
+    TransformError,
+)
+
+# Renderer Protocol - must be imported after RenderFrame to avoid circular dependency
+from tools.render.protocol import Renderer as Renderer  # noqa: E402
+
 __all__ = [
+    # Core data contract
     "RenderFrame",
+    # Renderer protocol
+    "Renderer",
+    # Renderer errors
+    "RendererError",
+    "RenderFrameError",
+    "TransformError",
 ]
