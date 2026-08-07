@@ -43,6 +43,7 @@ from tools.manga_frame.character_animation import (
 from tools.manga_frame.character_animation import (
     create_animation_clips as _create_clips,
 )
+from tools.render import RenderFrame
 
 # ============================================================================
 # Exceptions
@@ -306,6 +307,34 @@ class AnimationOrchestrator:
             Dictionary mapping clip_id to FrameTransform
         """
         return self._runtime.evaluate_at_frame(self._current_frame)
+
+    def render_frame(self) -> RenderFrame:
+        """Create a RenderFrame for the current playback frame.
+
+        This is a convenience method that wraps evaluate_current_frame()
+        in a RenderFrame with full timing context.
+
+        The RenderFrame provides renderer-friendly context including:
+        - frame_index: current frame position
+        - timestamp_seconds: time from animation start
+        - frame_rate: animation frame rate
+        - transforms: evaluated transforms for this frame
+
+        Returns:
+            RenderFrame containing frame context and transforms.
+
+        Example:
+            >>> frame = orchestrator.render_frame()
+            >>> for clip_id, transform in frame.transforms.items():
+            ...     renderer.draw(clip_id, transform)
+        """
+        transforms = self._runtime.evaluate_at_frame(self._current_frame)
+        return RenderFrame(
+            frame_index=self._current_frame,
+            timestamp_seconds=self._current_time,
+            frame_rate=self._frame_rate,
+            transforms=dict(transforms),
+        )
 
     def frames(
         self,

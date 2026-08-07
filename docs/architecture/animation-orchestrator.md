@@ -241,6 +241,71 @@ When no clips are loaded (`duration_frames == 0`):
 - No built-in caching
 - No GPU acceleration
 
+## Renderer Integration Contract
+
+The `AnimationOrchestrator` provides a renderer-facing contract via `RenderFrame` (`tools.render`).
+
+### Data Flow
+
+```
+AnimationOrchestrator
+        ↓
+render_frame() / frames() iterator
+        ↓
+RenderFrame (renderer contract)
+        ↓
+Future Renderer implementation
+```
+
+### RenderFrame Contract
+
+```python
+@dataclass(frozen=True)
+class RenderFrame:
+    frame_index: int           # Zero-based frame index
+    timestamp_seconds: float   # Elapsed time from start
+    frame_rate: float         # Animation frame rate
+    transforms: Mapping[str, FrameTransform]  # clip_id → transform
+```
+
+### Entity Lifecycle Semantics
+
+| Condition | Behavior |
+|-----------|----------|
+| Entity present | Its `clip_id` appears in `transforms` keys |
+| Entity absent | Its `clip_id` is not in `transforms` keys |
+| New entity appears | `clip_id` first appears in `transforms` at its start frame |
+| Entity disappears | `clip_id` no longer appears in `transforms` after its end frame |
+
+### Coordinate System
+
+The `RenderFrame` contract does **NOT** specify a coordinate system.
+
+The animation system provides transform values as-is from `FrameTransform`:
+- `position_x`, `position_y`: offset from origin (units unspecified)
+- `scale`: relative to original size (`1.0` = unchanged)
+- `rotation_deg`: clockwise positive
+- `opacity`: `0.0` (transparent) to `1.0` (opaque)
+- `anchor_x`, `anchor_y`: normalized pivot points (`0-1` range)
+
+The renderer is responsible for interpreting these values according to its own coordinate conventions.
+
+### API Methods
+
+| Method | Purpose |
+|--------|---------|
+| `render_frame()` | Create RenderFrame for current playback frame |
+| `frames()` | Iterator yielding RenderFrame-compatible tuples `(frame_index, transforms)` |
+
+### What This Contract Does NOT Do
+
+- Does not implement rendering
+- Does not perform image manipulation
+- Does not access GPU
+- Does not manage playback state
+- Does not specify coordinate system
+- Does not own entity creation/destruction logic
+
 ## Testing
 
 The orchestrator includes comprehensive tests covering:
@@ -252,11 +317,13 @@ The orchestrator includes comprehensive tests covering:
 - Sparse transforms
 - Frame evaluation
 - Frame iteration
+- RenderFrame contract
 - Unsupported interpolation
 - Atomicity on failure
 - Determinism
 - End-to-end pipeline
 - Playback state management
 - Floating-point stability
+- Renderer contract compatibility
 
-See: `tests/runtime/test_animation_orchestrator.py`, `tests/runtime/test_animation_playback.py`
+See: `tests/runtime/test_animation_orchestrator.py`, `tests/runtime/test_animation_playback.py`, `tools/render/__init__.py`

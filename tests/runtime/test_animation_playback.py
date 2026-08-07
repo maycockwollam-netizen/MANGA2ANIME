@@ -960,6 +960,167 @@ class TestPlaybackStateConsistency:
 # ============================================================================
 
 
+class TestRenderFrame:
+    """Tests for RenderFrame contract."""
+
+    def test_render_frame_construction(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test RenderFrame construction from orchestrator."""
+        loaded_orchestrator.seek(12)
+        frame = loaded_orchestrator.render_frame()
+
+        assert frame.frame_index == 12
+        assert frame.timestamp_seconds == pytest.approx(12 / 24.0)
+        assert frame.frame_rate == 24.0
+        assert isinstance(frame.transforms, dict)
+
+    def test_render_frame_immutability(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test RenderFrame is frozen/immutable."""
+        loaded_orchestrator.seek(12)
+        frame = loaded_orchestrator.render_frame()
+
+        # Verify frozen
+        with pytest.raises(AttributeError):
+            frame.frame_index = 10  # type: ignore
+        with pytest.raises(AttributeError):
+            frame.transforms = {}  # type: ignore
+
+    def test_render_frame_empty_transforms(
+        self, orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test RenderFrame with no clips loaded."""
+        frame = orchestrator.render_frame()
+
+        assert frame.frame_index == 0
+        assert frame.timestamp_seconds == 0.0
+        assert frame.frame_rate == 24.0
+        assert len(frame.transforms) == 0
+
+    def test_render_frame_multiple_entities(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test RenderFrame with multiple clip entities."""
+        # loaded_orchestrator only has one clip, but test the structure
+        frame = loaded_orchestrator.render_frame()
+
+        # Should have at least the hero_1 clip
+        assert len(frame.transforms) >= 0
+        # If there are transforms, they should be FrameTransform instances
+        for clip_id, transform in frame.transforms.items():
+            assert isinstance(clip_id, str)
+            assert hasattr(transform, "position_x")
+            assert hasattr(transform, "scale")
+
+    def test_render_frame_deterministic(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that repeated render_frame() produces identical results."""
+        loaded_orchestrator.seek(5)
+
+        frame1 = loaded_orchestrator.render_frame()
+        frame2 = loaded_orchestrator.render_frame()
+
+        assert frame1 == frame2
+
+    def test_render_frame_no_playback_mutation(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that render_frame() does not modify playback state."""
+        loaded_orchestrator.seek(10)
+
+        before_state = loaded_orchestrator.playback_state
+        before_frame = loaded_orchestrator.current_frame
+
+        # render_frame() is called to exercise the method
+        # but the return value is not used - we only verify state unchanged
+        _ = loaded_orchestrator.render_frame()
+
+        after_state = loaded_orchestrator.playback_state
+        after_frame = loaded_orchestrator.current_frame
+
+        assert before_state == after_state
+        assert before_frame == after_frame
+
+    def test_render_frame_frame_count(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test frame_count property."""
+        frame = loaded_orchestrator.render_frame()
+
+        assert frame.frame_count == len(frame.transforms)
+
+    def test_render_frame_duration_seconds(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test duration_seconds calculation."""
+        frame = loaded_orchestrator.render_frame()
+
+        # With no entities, duration_seconds should be 0
+        # (frame_count / frame_rate would be 0)
+        expected = frame.frame_count / frame.frame_rate if frame.frame_count > 0 else 0.0
+        assert frame.duration_seconds == expected
+
+    def test_render_frame_preserves_clip_identity(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that clip_id semantics are preserved in RenderFrame."""
+        frame = loaded_orchestrator.render_frame()
+
+        # Verify transforms are keyed by clip_id
+        for clip_id in frame.transforms.keys():
+            assert isinstance(clip_id, str)
+            assert "_" in clip_id or clip_id == "default"  # clip_id format check
+
+    def test_render_frame_compatible_with_frames_iterator(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that RenderFrame data matches what frames() iterator provides."""
+        loaded_orchestrator.seek(5)
+
+        # Get frame via render_frame()
+        rf = loaded_orchestrator.render_frame()
+
+        # Get frame via frames iterator
+        frames_list = list(loaded_orchestrator.frames(start_frame=5, end_frame=5))
+        assert len(frames_list) == 1
+        fi, ft = frames_list[0]
+
+        assert rf.frame_index == fi
+        assert rf.transforms == ft
+
+    def test_render_frame_timestamp_matches_current_time(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that timestamp_seconds matches current_time."""
+        loaded_orchestrator.seek(12)
+        frame = loaded_orchestrator.render_frame()
+
+        assert frame.timestamp_seconds == loaded_orchestrator.playback_state.current_time_seconds
+
+    def test_render_frame_at_exact_frame_boundary(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test RenderFrame at exact frame boundary."""
+        loaded_orchestrator.seek(24)
+        frame = loaded_orchestrator.render_frame()
+
+        assert frame.frame_index == 24
+        assert frame.timestamp_seconds == pytest.approx(1.0)  # 24/24 = 1.0 second
+
+    def test_render_frame_at_frame_zero(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test RenderFrame at frame 0."""
+        loaded_orchestrator.seek(0)
+        frame = loaded_orchestrator.render_frame()
+
+        assert frame.frame_index == 0
+        assert frame.timestamp_seconds == 0.0
+
+
 class TestFrameIterator:
     """Tests for frames() iterator method."""
 

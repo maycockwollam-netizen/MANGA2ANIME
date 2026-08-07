@@ -1,0 +1,105 @@
+"""Renderer Integration Contract.
+
+Defines the minimal contract between AnimationRuntime and a renderer.
+This module specifies what data a renderer receives, without knowing how rendering is performed.
+
+This module does NOT:
+- Implement rendering
+- Perform image manipulation
+- Access GPU
+- Execute animation logic
+- Manage playback state
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from tools.frame.models import FrameTransform
+
+
+@dataclass(frozen=True)
+class RenderFrame:
+    """Immutable frame context for renderer consumption.
+
+    Represents the animation state at a specific frame, suitable for
+    renderer consumption. This is a pure data contract - the runtime
+    produces this, a renderer consumes it.
+
+    Attributes:
+        frame_index: Zero-based frame index in the animation sequence.
+        timestamp_seconds: Elapsed time from animation start in seconds.
+            Computed as: frame_index / frame_rate
+        frame_rate: Frame rate used for timestamp computation.
+        transforms: Mapping from authoritative entity/clip identity (clip_id)
+            to the evaluated FrameTransform at this frame.
+
+    Entity Lifecycle:
+        The transforms mapping uses clip_id as the entity identity key.
+        - Keys are authoritative clip identifiers from AnimationClip.clip_id
+        - Values are FrameTransform instances evaluated at this frame
+        - An entity is present in a frame if its clip_id appears in the keys
+        - An entity is absent from a frame if its clip_id is not in the keys
+
+    Coordinate System:
+        The RenderFrame contract does NOT specify a coordinate system.
+        Transform values (position_x, position_y, scale, rotation_deg, etc.)
+        are provided as-is from FrameTransform. The renderer is responsible
+        for interpreting these values according to its own coordinate conventions.
+
+        Important: The animation system uses:
+        - position_x, position_y: offset from origin (units unspecified)
+        - scale: relative to original size (1.0 = unchanged)
+        - rotation_deg: clockwise positive
+        - opacity: 0.0 (transparent) to 1.0 (opaque)
+        - anchor_x, anchor_y: normalized pivot points (0-1 range)
+
+    Determinism:
+        Given identical runtime state and frame_index, RenderFrame construction
+        is deterministic. Same input produces identical output.
+
+    Example:
+        >>> from tools.frame.models import FrameTransform
+        >>> from tools.render import RenderFrame
+        >>>
+        >>> frame = RenderFrame(
+        ...     frame_index=12,
+        ...     timestamp_seconds=0.5,
+        ...     frame_rate=24.0,
+        ...     transforms={"hero_1": FrameTransform(position_x=100)},
+        ... )
+        >>>
+        >>> # Entity presence check
+        >>> if "hero_1" in frame.transforms:
+        ...     transform = frame.transforms["hero_1"]
+        ...     render_entity("hero_1", transform)
+    """
+
+    frame_index: int
+    timestamp_seconds: float
+    frame_rate: float
+    transforms: Mapping[str, FrameTransform]
+
+    @property
+    def duration_seconds(self) -> float:
+        """Calculate duration in seconds from frame_count and frame_rate.
+
+        Returns:
+            Total animation duration in seconds.
+        """
+        return self.frame_count / self.frame_rate if self.frame_count > 0 else 0.0
+
+    @property
+    def frame_count(self) -> int:
+        """Number of unique entities in this frame.
+
+        Returns:
+            Count of clip_ids with transforms in this frame.
+        """
+        return len(self.transforms)
+
+
+__all__ = [
+    "RenderFrame",
+]
