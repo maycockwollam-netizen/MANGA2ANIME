@@ -317,8 +317,11 @@ class AnimationOrchestrator:
         The RenderFrame provides renderer-friendly context including:
         - frame_index: current frame position
         - timestamp_seconds: time from animation start
+        - duration_frames: total animation duration in frames
+        - duration_seconds: total animation duration in seconds
         - frame_rate: animation frame rate
-        - transforms: evaluated transforms for this frame
+        - transforms: evaluated transforms for this frame (read-only mapping)
+        - entity_count: number of entities with transforms in this frame
 
         Returns:
             RenderFrame containing frame context and transforms.
@@ -328,12 +331,15 @@ class AnimationOrchestrator:
             >>> for clip_id, transform in frame.transforms.items():
             ...     renderer.draw(clip_id, transform)
         """
+        from types import MappingProxyType
+
         transforms = self._runtime.evaluate_at_frame(self._current_frame)
         return RenderFrame(
             frame_index=self._current_frame,
             timestamp_seconds=self._current_time,
             frame_rate=self._frame_rate,
-            transforms=dict(transforms),
+            duration_frames=self.duration_frames,
+            transforms=MappingProxyType(dict(transforms)),
         )
 
     def frames(

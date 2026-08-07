@@ -1,5 +1,7 @@
 """Tests for animation playback timing."""
 
+from collections.abc import Mapping
+
 import pytest
 
 from runtime.animation.consumer import (
@@ -973,7 +975,8 @@ class TestRenderFrame:
         assert frame.frame_index == 12
         assert frame.timestamp_seconds == pytest.approx(12 / 24.0)
         assert frame.frame_rate == 24.0
-        assert isinstance(frame.transforms, dict)
+        assert frame.duration_frames == 24
+        assert isinstance(frame.transforms, Mapping)
 
     def test_render_frame_immutability(
         self, loaded_orchestrator: AnimationOrchestrator
@@ -982,11 +985,29 @@ class TestRenderFrame:
         loaded_orchestrator.seek(12)
         frame = loaded_orchestrator.render_frame()
 
-        # Verify frozen
+        # Verify frozen dataclass - field reassignment blocked
         with pytest.raises(AttributeError):
             frame.frame_index = 10  # type: ignore
         with pytest.raises(AttributeError):
             frame.transforms = {}  # type: ignore
+        with pytest.raises(AttributeError):
+            frame.duration_frames = 100  # type: ignore
+
+    def test_render_frame_transforms_mapping_immutable(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that transforms mapping cannot be mutated in-place."""
+        frame = loaded_orchestrator.render_frame()
+
+        # Cannot add new key
+        with pytest.raises(TypeError):
+            frame.transforms["new_entity"] = loaded_orchestrator.evaluate_current_frame()["hero_1"]  # type: ignore
+
+        # Cannot delete existing key
+        if len(frame.transforms) > 0:
+            existing_key = next(iter(frame.transforms.keys()))
+            with pytest.raises(TypeError):
+                del frame.transforms[existing_key]  # type: ignore
 
     def test_render_frame_empty_transforms(
         self, orchestrator: AnimationOrchestrator
@@ -997,6 +1018,7 @@ class TestRenderFrame:
         assert frame.frame_index == 0
         assert frame.timestamp_seconds == 0.0
         assert frame.frame_rate == 24.0
+        assert frame.duration_frames == 0
         assert len(frame.transforms) == 0
 
     def test_render_frame_multiple_entities(
@@ -1044,24 +1066,42 @@ class TestRenderFrame:
         assert before_state == after_state
         assert before_frame == after_frame
 
-    def test_render_frame_frame_count(
+    def test_render_frame_entity_count(
         self, loaded_orchestrator: AnimationOrchestrator
     ) -> None:
-        """Test frame_count property."""
+        """Test entity_count property matches len(transforms)."""
         frame = loaded_orchestrator.render_frame()
 
-        assert frame.frame_count == len(frame.transforms)
+        assert frame.entity_count == len(frame.transforms)
+
+    def test_render_frame_duration_frames(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test duration_frames matches orchestrator duration."""
+        frame = loaded_orchestrator.render_frame()
+
+        assert frame.duration_frames == loaded_orchestrator.duration_frames
+        assert frame.duration_frames == 24  # loaded_orchestrator fixture
 
     def test_render_frame_duration_seconds(
         self, loaded_orchestrator: AnimationOrchestrator
     ) -> None:
-        """Test duration_seconds calculation."""
+        """Test duration_seconds is based on duration_frames, not entity count."""
         frame = loaded_orchestrator.render_frame()
 
-        # With no entities, duration_seconds should be 0
-        # (frame_count / frame_rate would be 0)
-        expected = frame.frame_count / frame.frame_rate if frame.frame_count > 0 else 0.0
+        # duration_seconds should be based on animation duration, not entity count
+        expected = frame.duration_frames / frame.frame_rate
         assert frame.duration_seconds == expected
+        assert frame.duration_seconds == pytest.approx(24 / 24.0)  # = 1.0 second
+
+    def test_render_frame_empty_duration(
+        self, orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test duration_seconds with empty runtime (duration_frames=0)."""
+        frame = orchestrator.render_frame()
+
+        assert frame.duration_frames == 0
+        assert frame.duration_seconds == 0.0
 
     def test_render_frame_preserves_clip_identity(
         self, loaded_orchestrator: AnimationOrchestrator
@@ -1109,6 +1149,8 @@ class TestRenderFrame:
 
         assert frame.frame_index == 24
         assert frame.timestamp_seconds == pytest.approx(1.0)  # 24/24 = 1.0 second
+        assert frame.duration_frames == 24
+        assert frame.duration_seconds == pytest.approx(1.0)  # 24/24 = 1.0 second
 
     def test_render_frame_at_frame_zero(
         self, loaded_orchestrator: AnimationOrchestrator
@@ -1119,6 +1161,31 @@ class TestRenderFrame:
 
         assert frame.frame_index == 0
         assert frame.timestamp_seconds == 0.0
+
+    def test_render_frame_runtime_state_unaffected(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that modifying render_frame data doesn't affect runtime."""
+        frame1 = loaded_orchestrator.render_frame()
+        frame2 = loaded_orchestrator.render_frame()
+
+        # Both frames should have same transforms (no runtime state changed)
+        assert frame1.transforms.keys() == frame2.transforms.keys()
+
+    def test_render_frame_mapping_proxy_type(
+        self, loaded_orchestrator: AnimationOrchestrator
+    ) -> None:
+        """Test that transforms is a read-only mapping."""
+        from types import MappingProxyType
+
+        frame = loaded_orchestrator.render_frame()
+
+        # transforms should be MappingProxyType
+        assert isinstance(frame.transforms, MappingProxyType)
+        # But also a Mapping
+        from collections.abc import Mapping
+
+        assert isinstance(frame.transforms, Mapping)
 
 
 class TestFrameIterator:

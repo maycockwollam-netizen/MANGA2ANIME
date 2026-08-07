@@ -27,13 +27,21 @@ class RenderFrame:
     renderer consumption. This is a pure data contract - the runtime
     produces this, a renderer consumes it.
 
-    Attributes:
+    Timing Attributes:
         frame_index: Zero-based frame index in the animation sequence.
-        timestamp_seconds: Elapsed time from animation start in seconds.
+            Range: [0, duration_frames]
+        timestamp_seconds: Elapsed time from animation start to this frame.
             Computed as: frame_index / frame_rate
-        frame_rate: Frame rate used for timestamp computation.
-        transforms: Mapping from authoritative entity/clip identity (clip_id)
+        duration_frames: Total animation duration in frames.
+            This is the last valid frame index + 1.
+        duration_seconds: Total animation duration in seconds.
+            Computed as: duration_frames / frame_rate
+        frame_rate: Frame rate used for timestamp computation (FPS).
+
+    Transform Attributes:
+        transforms: Read-only mapping from authoritative entity/clip identity (clip_id)
             to the evaluated FrameTransform at this frame.
+        entity_count: Number of entities with transforms in this frame.
 
     Entity Lifecycle:
         The transforms mapping uses clip_id as the entity identity key.
@@ -41,6 +49,12 @@ class RenderFrame:
         - Values are FrameTransform instances evaluated at this frame
         - An entity is present in a frame if its clip_id appears in the keys
         - An entity is absent from a frame if its clip_id is not in the keys
+
+    Immutability:
+        RenderFrame is a frozen dataclass - fields cannot be reassigned.
+        The transforms mapping is wrapped by the producer to prevent
+        in-place mutation (add/delete keys). However, the FrameTransform
+        values themselves remain mutable (Pydantic BaseModel).
 
     Coordinate System:
         The RenderFrame contract does NOT specify a coordinate system.
@@ -67,8 +81,15 @@ class RenderFrame:
         ...     frame_index=12,
         ...     timestamp_seconds=0.5,
         ...     frame_rate=24.0,
+        ...     duration_frames=240,
         ...     transforms={"hero_1": FrameTransform(position_x=100)},
         ... )
+        >>>
+        >>> # Timing information
+        >>> print(f"Frame {frame.frame_index} at {frame.timestamp_seconds}s")
+        Frame 12 at 0.5s
+        >>> print(f"Animation duration: {frame.duration_seconds}s")
+        Animation duration: 10.0s
         >>>
         >>> # Entity presence check
         >>> if "hero_1" in frame.transforms:
@@ -79,20 +100,21 @@ class RenderFrame:
     frame_index: int
     timestamp_seconds: float
     frame_rate: float
+    duration_frames: int
     transforms: Mapping[str, FrameTransform]
 
     @property
     def duration_seconds(self) -> float:
-        """Calculate duration in seconds from frame_count and frame_rate.
+        """Total animation duration in seconds.
 
         Returns:
-            Total animation duration in seconds.
+            Animation duration in seconds = duration_frames / frame_rate
         """
-        return self.frame_count / self.frame_rate if self.frame_count > 0 else 0.0
+        return self.duration_frames / self.frame_rate
 
     @property
-    def frame_count(self) -> int:
-        """Number of unique entities in this frame.
+    def entity_count(self) -> int:
+        """Number of entities with transforms in this frame.
 
         Returns:
             Count of clip_ids with transforms in this frame.

@@ -263,10 +263,40 @@ Future Renderer implementation
 @dataclass(frozen=True)
 class RenderFrame:
     frame_index: int           # Zero-based frame index
-    timestamp_seconds: float   # Elapsed time from start
-    frame_rate: float         # Animation frame rate
-    transforms: Mapping[str, FrameTransform]  # clip_id → transform
+    timestamp_seconds: float   # Elapsed time from start (frame_index / frame_rate)
+    frame_rate: float         # Animation frame rate (FPS)
+    duration_frames: int     # Total animation duration in frames
+    transforms: Mapping[str, FrameTransform]  # Read-only clip_id → transform mapping
+
+    @property
+    def duration_seconds(self) -> float:
+        """Total animation duration in seconds (duration_frames / frame_rate)."""
+        return self.duration_frames / self.frame_rate
+
+    @property
+    def entity_count(self) -> int:
+        """Number of entities with transforms in this frame."""
+        return len(self.transforms)
 ```
+
+### Timing Semantics
+
+| Attribute | Source | Calculation |
+|-----------|--------|-------------|
+| `frame_index` | Current playback position | Zero-based frame index |
+| `timestamp_seconds` | Current playback time | `frame_index / frame_rate` |
+| `duration_frames` | Animation timeline | Total frames in animation |
+| `duration_seconds` | Animation timeline | `duration_frames / frame_rate` |
+| `frame_rate` | Orchestrator | FPS (e.g., 24.0) |
+
+### Immutability
+
+`RenderFrame` is a **frozen dataclass** — fields cannot be reassigned after construction.
+
+The `transforms` mapping is wrapped in `MappingProxyType` to prevent in-place mutation:
+- Adding new keys: blocked (`TypeError`)
+- Deleting existing keys: blocked (`TypeError`)
+- Modifying values (FrameTransform): not blocked (FrameTransform is mutable by design)
 
 ### Entity Lifecycle Semantics
 
@@ -305,6 +335,7 @@ The renderer is responsible for interpreting these values according to its own c
 - Does not manage playback state
 - Does not specify coordinate system
 - Does not own entity creation/destruction logic
+- Does not freeze FrameTransform values (renderers must not mutate transform data)
 
 ## Testing
 
