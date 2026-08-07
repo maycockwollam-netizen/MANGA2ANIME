@@ -139,6 +139,9 @@ class RenderFrame:
         return len(self.transforms)
 
 
+# Renderer Adapter - must be imported after RenderFrame to avoid circular dependency
+from tools.render.adapter import FrameAdapter as FrameAdapter  # noqa: E402
+
 # Renderer Exceptions - must be imported after RenderFrame to avoid circular dependency
 from tools.render.exceptions import (  # noqa: E402
     RendererError,
@@ -154,6 +157,8 @@ __all__ = [
     "RenderFrame",
     # Renderer protocol
     "Renderer",
+    # Renderer adapter
+    "FrameAdapter",
     # Renderer errors
     "RendererError",
     "RenderFrameError",
