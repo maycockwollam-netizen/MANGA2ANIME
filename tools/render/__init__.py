@@ -168,6 +168,10 @@ __all__ = [
     "RendererError",
     "RenderFrameError",
     "TransformError",
+    # Validation
+    "RenderSequenceValidation",
+    "ValidationError",
+    "validate_render_sequence",
 ]
 
 
@@ -185,4 +189,16 @@ def __getattr__(name: str):
         from tools.render.export import export_render_frames
 
         return export_render_frames
+    if name == "validate_render_sequence":
+        from tools.render.validation import validate_render_sequence
+
+        return validate_render_sequence
+    if name == "RenderSequenceValidation":
+        from tools.render.validation import RenderSequenceValidation
+
+        return RenderSequenceValidation
+    if name == "ValidationError":
+        from tools.render.validation import ValidationError
+
+        return ValidationError
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

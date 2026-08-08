@@ -621,3 +621,60 @@ tests/tools/render/test_end_to_end.py
 ```
 
 See: `tests/tools/render/test_end_to_end.py`
+
+## Render Sequence Validation
+
+The validation layer verifies exported PNG sequences without coupling to rendering implementation.
+
+### Architecture
+
+```
+Exported PNG sequence
+        ↓
+    validate_render_sequence()
+        ↓
+    RenderSequenceValidation (or ValidationError)
+```
+
+### Module
+
+```
+tools/render/validation.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderSequenceValidation:
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    dimensions: tuple[int, int]
+    mode: str
+
+
+def validate_render_sequence(
+    output_dir: Path | str,
+    *,
+    prefix: str = "frame",
+    expected_frame_count: int | None = None,
+) -> RenderSequenceValidation:
+    """Validate an exported PNG sequence."""
+```
+
+### Validation Checks
+
+- Empty directory detection
+- Missing frame indices detection
+- Consistent image dimensions
+- Consistent image mode
+- Readable PNG files
+- Expected frame count verification (optional)
+
+### Constraints
+
+- Does not modify files
+- Does not import runtime/animation
+- Does not import Pillow rendering internals beyond metadata inspection
+
+See: `tests/tools/render/test_validation.py`
