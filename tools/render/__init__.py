@@ -142,6 +142,9 @@ class RenderFrame:
 # Renderer Adapter - must be imported after RenderFrame to avoid circular dependency
 from tools.render.adapter import FrameAdapter as FrameAdapter  # noqa: E402
 
+# Concrete Renderer - must be imported after RenderFrame to avoid circular dependency
+from tools.render.concrete_renderer import ConcreteRenderer as ConcreteRenderer  # noqa: E402
+
 # Renderer Exceptions - must be imported after RenderFrame to avoid circular dependency
 from tools.render.exceptions import (  # noqa: E402
     RendererError,
@@ -159,8 +162,27 @@ __all__ = [
     "Renderer",
     # Renderer adapter
     "FrameAdapter",
+    # Concrete renderer
+    "ConcreteRenderer",
     # Renderer errors
     "RendererError",
     "RenderFrameError",
     "TransformError",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import for render functions to avoid circular dependency."""
+    if name == "render_frame_to_png":
+        from tools.render.integration import render_frame_to_png
+
+        return render_frame_to_png
+    if name == "render_frames_to_png":
+        from tools.render.sequence import render_frames_to_png
+
+        return render_frames_to_png
+    if name == "export_render_frames":
+        from tools.render.export import export_render_frames
+
+        return export_render_frames
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

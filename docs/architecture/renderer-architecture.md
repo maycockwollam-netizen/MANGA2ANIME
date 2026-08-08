@@ -6,18 +6,52 @@ This document describes the renderer integration architecture for the MANGA2ANIM
 
 The renderer architecture defines the boundary between the animation runtime system and concrete rendering implementations. The animation system produces `RenderFrame` data; the renderer consumes it.
 
-**Important**: No concrete renderer implementation exists yet. This document describes the contract that future renderers must implement.
-
 ## Architecture
 
 ```
 tools/frame/models.py (FrameTransform)
-        ↓
+        â†“
 tools/render/__init__.py (RenderFrame)
-        ↓
+        â†“
 tools/render/protocol.py (Renderer Protocol)
-        ↓
-[Concrete Renderer Implementations - NOT YET IMPLEMENTED]
+        â†“
+[Concrete Renderer Implementations]
+```
+
+## Concrete Renderer V1
+
+A concrete renderer implementation (`ConcreteRenderer`) exists that renders `RenderFrame` to RGBA images using Pillow.
+
+### Implementation
+
+- **Backend**: Pillow (PIL)
+- **Output**: RGBA PNG images
+- **Entities**: Placeholder colored rectangles
+- **Color derivation**: Deterministic using SHA-256 hash of clip_id
+
+### Module
+
+```
+tools/render/concrete_renderer.py
+```
+
+### Usage
+
+```python
+from tools.render import ConcreteRenderer, RenderFrame
+from tools.frame.models import FrameTransform
+
+renderer = ConcreteRenderer(canvas_size=(800, 600))
+frame = RenderFrame(
+    frame_index=0,
+    timestamp_seconds=0.0,
+    frame_rate=24.0,
+    duration_frames=24,
+    transforms={"hero": FrameTransform(position_x=100, position_y=100)},
+)
+renderer.render(frame)
+image = renderer.last_output  # PIL Image
+image.save("frame_0.png")
 ```
 
 ## Dependency Constraints
@@ -45,7 +79,7 @@ The `RenderFrame` is the primary data contract passed from the animation runtime
 | `frame_rate` | `float` | Animation frame rate (FPS) |
 | `duration_frames` | `int` | Total animation duration in frames |
 | `duration_seconds` | `float` | Total animation duration in seconds (property) |
-| `transforms` | `Mapping[str, FrameTransform]` | Read-only mapping of clip_id → transform |
+| `transforms` | `Mapping[str, FrameTransform]` | Read-only mapping of clip_id â†’ transform |
 | `entity_count` | `int` | Number of entities in this frame (property) |
 
 ### Immutability
@@ -199,8 +233,8 @@ The renderer is responsible for interpreting these values according to its own c
 
 ```
 RendererError (base)
-    ├── RenderFrameError (invalid frame data)
-    └── TransformError (invalid transform)
+    â”śâ”€â”€ RenderFrameError (invalid frame data)
+    â””â”€â”€ TransformError (invalid transform)
 ```
 
 ### When to use
@@ -213,24 +247,34 @@ RendererError (base)
 
 ## V1 Limitations
 
-The current renderer architecture has the following limitations:
+The ConcreteRenderer V1 implementation has the following limitations:
 
 ### Not Implemented
 
-- **Concrete renderer**: No actual rendering implementation exists
-- **Output abstraction**: No image/canvas/buffer output contract
-- **GPU rendering**: No GPU backend integration
+- **Real image assets**: Only placeholder rectangles are rendered
+- **GPU rendering**: CPU-based Pillow rendering only
 - **Resource management**: No texture/sprite pooling
 - **Batching**: No frame batching optimization
-- **Caching**: No transform caching
+- **Caching**: No transform or asset caching
 - **Dirty tracking**: No incremental update detection
 - **Async rendering**: No async/await support
 - **Multi-threading**: Single-threaded only
+- **Video export**: No built-in video encoding
 - **Serialization**: No renderer state persistence
 
 ### Design Decisions
 
 These limitations are intentional for V1. They may be addressed in future increments based on concrete use cases and profiling data.
+
+### Deferred Features
+
+Future renderer implementations may consider:
+
+- **Real assets**: AssetProvider abstraction for loading images
+- **GPU backend**: OpenGL/Vulkan accelerated rendering
+- **Animation sequences**: Built-in sequence rendering to frames
+- **Video export**: FFmpeg-based video encoding
+- **Performance**: Caching, batching, dirty tracking
 
 ## Example Usage
 
@@ -285,18 +329,105 @@ Renderer protocol tests verify:
 - Produces deterministic results
 - Does not mutate input
 
-See: `tests/tools/render/test_protocol.py`
+## Single-Frame Render Integration
+
+The integration layer connects `RenderFrame` production to PNG output.
+
+### Architecture
+
+```
+AnimationOrchestrator.render_frame()
+        ↓
+    RenderFrame
+        ↓
+    FrameAdapter
+        ↓
+    ConcreteRenderer
+        ↓
+    PNG file
+```
+
+### Module
+
+```
+tools/render/integration.py
+```
+
+### Usage
+
+```python
+from tools.render import render_frame_to_png
+
+# From AnimationOrchestrator
+frame = orchestrator.render_frame()
+render_frame_to_png(frame, "output.png")
+
+# Or from any RenderFrame source
+from tools.render import RenderFrame
+frame = RenderFrame(
+    frame_index=0,
+    timestamp_seconds=0.0,
+    frame_rate=24.0,
+    duration_frames=24,
+    transforms={"hero": FrameTransform(position_x=100)},
+)
+render_frame_to_png(frame, "output.png")
+```
+
+### API
+
+```python
+def render_frame_to_png(
+    frame: RenderFrame,
+    output_path: Path | str,
+    *,
+    canvas_size: tuple[int, int] | None = None,
+    background: tuple[int, int, int, int] | None = None,
+    renderer: Renderer | None = None,
+) -> None:
+    """Render a RenderFrame to a PNG file."""
+```
+
+### Behavior
+
+1. Accepts an existing `RenderFrame`
+2. Creates/uses `ConcreteRenderer` when no renderer is supplied
+3. Passes the exact `RenderFrame` through `FrameAdapter`
+4. Obtains `renderer.last_output`
+5. Saves the Pillow image as PNG
+6. Returns `None`
+
+### Constraints
+
+The integration layer **does NOT**:
+
+- Produce `RenderFrame` (delegates to runtime)
+- Implement animation playback
+- Implement video rendering
+- Access runtime internals (`AnimationRuntime`, `AnimationTimeline`, etc.)
+
+See: `tests/tools/render/test_render_integration.py`
 
 ## Module Structure
 
 ```
 tools/render/
-    __init__.py      # RenderFrame, Renderer, exceptions
+    __init__.py      # RenderFrame, Renderer, exceptions, render_frame_to_png
     protocol.py      # Renderer protocol definition
     exceptions.py    # RendererError hierarchy
+    adapter.py      # FrameAdapter for frame forwarding
+    concrete_renderer.py  # ConcreteRenderer (Pillow backend)
+    integration.py   # Single-frame render integration (RenderFrame -> PNG)
+    sequence.py     # Multi-frame PNG sequence export
+    export.py      # End-to-end export entry point
 
 tests/tools/render/
     test_protocol.py  # Renderer protocol tests
+    test_adapter.py   # FrameAdapter tests
+    test_concrete_renderer.py  # ConcreteRenderer tests
+    test_render_integration.py  # Single-frame integration tests
+    test_sequence.py  # PNG sequence export tests
+    test_export.py  # Export entry point tests
 ```
 
 ## Future Considerations
@@ -309,3 +440,136 @@ Future renderer implementations may consider:
 - **Async**: Async rendering pipelines
 - **Lifecycle callbacks**: If stateful rendering is needed
 - **begin_frame/end_frame**: If frame boundaries need explicit handling
+
+## Multi-Frame PNG Sequence Export
+
+The sequence export layer renders multiple RenderFrame objects to numbered PNG files.
+
+### Architecture
+
+```
+Iterable[RenderFrame]
+        ↓
+render_frames_to_png()
+        ↓
+PNG sequence (frame_000000.png, frame_000001.png, ...)
+```
+
+### Module
+
+```
+tools/render/sequence.py
+```
+
+### Usage
+
+```python
+from tools.render import render_frames_to_png
+
+# From orchestrator frames
+frames = [orchestrator.render_frame() for _ in range(10)]
+count = render_frames_to_png(frames, "output_frames")
+```
+
+### API
+
+```python
+def render_frames_to_png(
+    frames: Iterable[RenderFrame],
+    output_dir: Path | str,
+    *,
+    prefix: str = "frame",
+    canvas_size: tuple[int, int] | None = None,
+    background: tuple[int, int, int, int] | None = None,
+    renderer: Renderer | None = None,
+) -> int:
+    """Render a sequence of RenderFrame objects to numbered PNG files."""
+```
+
+### Filename Convention
+
+- Format: `{prefix}_{frame_index:06d}.png`
+- Example: `frame_000000.png`, `frame_000001.png`, `frame_000042.png`
+- Zero-padded to 6 digits for determinism
+
+### Behavior
+
+1. Creates output directory if it doesn't exist
+2. Processes frames in supplied order
+3. Preserves exact RenderFrame objects
+4. Uses frame_index for filenames
+5. Returns count of successfully written files
+
+### PNG Sequence as Intermediate Artifact
+
+PNG sequences are intermediate artifacts for video encoding. They are:
+
+- **Deterministic**: Same input produces same output
+- **Debuggable**: Individual frames can be inspected
+- **Out of scope**: Video encoding/playback is not implemented
+
+Future work may include video encoding using external tools.
+
+See: `tests/tools/render/test_sequence.py`
+
+## End-to-End Render Export Entry Point
+
+The `export_render_frames()` function provides a public entry point for exporting RenderFrame sequences.
+
+### Architecture
+
+```
+RenderFrame
+    ↓
+FrameAdapter
+    ↓
+ConcreteRenderer
+    ↓
+render_frame_to_png()
+    ↓
+render_frames_to_png()
+    ↓
+export_render_frames()
+    ↓
+PNG sequence
+```
+
+### Module
+
+```
+tools/render/export.py
+```
+
+### API
+
+```python
+def export_render_frames(
+    frames: Iterable[RenderFrame],
+    output_dir: Path | str,
+    *,
+    prefix: str = "frame",
+    canvas_size: tuple[int, int] | None = None,
+    background: tuple[int, int, int, int] | None = None,
+    renderer: Renderer | None = None,
+) -> int:
+    """Export a sequence of RenderFrame objects to numbered PNG files."""
+```
+
+### Design
+
+This entry point is **orchestration only** — it delegates to the existing implementation without introducing new logic.
+
+- **PNG sequence is the current terminal output artifact**
+- **Video encoding remains out of scope**
+- **No animation runtime coupling is introduced**
+
+### Usage
+
+```python
+from tools.render import export_render_frames
+
+frames = [orchestrator.render_frame() for _ in range(10)]
+count = export_render_frames(frames, "output_frames")
+```
+
+See: `tests/tools/render/test_export.py`
