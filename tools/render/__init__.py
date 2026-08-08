@@ -187,6 +187,10 @@ __all__ = [
     "TimelineError",
     "create_frame_timeline",
     "create_frame_timeline_from_preview",
+    # Session
+    "RenderSession",
+    "SessionError",
+    "create_render_session",
 ]
 
 
@@ -260,4 +264,16 @@ def __getattr__(name: str):
         from tools.render.timeline import create_frame_timeline_from_preview
 
         return create_frame_timeline_from_preview
+    if name == "create_render_session":
+        from tools.render.session import create_render_session
+
+        return create_render_session
+    if name == "RenderSession":
+        from tools.render.session import RenderSession
+
+        return RenderSession
+    if name == "SessionError":
+        from tools.render.session import SessionError
+
+        return SessionError
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

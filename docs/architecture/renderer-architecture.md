@@ -943,3 +943,86 @@ def create_frame_timeline_from_preview(
 - No video encoding
 
 See: `tests/tools/render/test_timeline.py`
+
+## Render Session
+
+The session layer provides unified orchestration of render sequence artifacts.
+
+### Architecture
+
+```
+PNG sequence
+    ↓
+Validation
+    ↓
+Manifest + Preview + Timeline
+    ↓
+RenderSession
+    ↓
+Playback
+```
+
+### Module
+
+```
+tools/render/session.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderSession:
+    manifest: RenderSequenceManifest
+    preview: RenderPreview
+    timeline: FrameTimeline
+
+    # Properties
+    frame_count: int
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+
+    # Methods
+    def playback() -> RenderPlayback: ...
+
+
+class SessionError(Exception):
+    """Error creating or using a render session."""
+
+
+def create_render_session(
+    output_dir: Path | str,
+    *,
+    prefix: str = "frame",
+    frame_rate: float = 24.0,
+) -> RenderSession:
+    ...
+```
+
+### Session Responsibilities
+
+- Groups: Manifest (metadata), Preview (frame access), Timeline (time mapping)
+- Delegates validation to existing layer
+- Verifies metadata consistency
+- Provides unified access
+
+### What Session is NOT
+
+- NOT a renderer
+- NOT a video encoder
+- NOT a media player
+- NOT a real-time playback engine
+- NOT a cache
+- NOT an animation runtime
+- NOT a filesystem manager
+
+### Constraints
+
+- Immutable
+- Read-only
+- Orchestration only
+- No file creation/modification
+
+See: `tests/tools/render/test_session.py`
