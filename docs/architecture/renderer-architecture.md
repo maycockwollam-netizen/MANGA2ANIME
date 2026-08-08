@@ -573,3 +573,51 @@ count = export_render_frames(frames, "output_frames")
 ```
 
 See: `tests/tools/render/test_export.py`
+
+## End-to-End Smoke Tests
+
+The render export pipeline is verified by end-to-end smoke tests that prove the complete pipeline works.
+
+### Architecture Verified
+
+```
+AnimationOrchestrator.render_frame()
+        ↓
+    RenderFrame
+        ↓
+    export_render_frames()
+        ↓
+    render_frames_to_png()
+        ↓
+    render_frame_to_png()
+        ↓
+    FrameAdapter
+        ↓
+    ConcreteRenderer
+        ↓
+    PNG files
+```
+
+### Test Coverage
+
+The end-to-end tests verify:
+
+- Real RenderFrame can be produced by animation orchestration
+- Frames can be exported through export_render_frames()
+- PNG files are created with correct properties
+- PNG format is RGBA with correct dimensions
+- Frame filenames contain correct frame_index
+- Frame ordering is deterministic
+- RenderFrame metadata remains unchanged
+- clip_id keys and transforms are preserved
+- Identical input produces byte-identical output
+- Exceptions are not swallowed
+- Output directory handling works
+
+### Module
+
+```
+tests/tools/render/test_end_to_end.py
+```
+
+See: `tests/tools/render/test_end_to_end.py`
