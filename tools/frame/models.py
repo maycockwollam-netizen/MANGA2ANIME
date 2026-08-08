@@ -69,6 +69,8 @@ class FrameTransform(BaseModel):
         opacity: Opacity from 0.0 (transparent) to 1.0 (opaque)
         anchor_x: Anchor/pivot X point (0-1 normalized)
         anchor_y: Anchor/pivot Y point (0-1 normalized)
+        source_path: Optional path to image asset for rendering.
+            If None, the renderer uses its default placeholder behavior.
     """
 
     position_x: float | None = Field(default=None, description="X position offset")
@@ -78,6 +80,7 @@ class FrameTransform(BaseModel):
     opacity: float | None = Field(default=1.0, ge=0, le=1, description="Opacity 0-1 (default: 1.0)")
     anchor_x: float | None = Field(default=0.5, ge=0, le=1, description="Anchor X point (default: 0.5)")
     anchor_y: float | None = Field(default=0.5, ge=0, le=1, description="Anchor Y point (default: 0.5)")
+    source_path: Path | None = Field(default=None, description="Path to image asset")
 
     @model_validator(mode="after")
     def validate_rotation(self) -> FrameTransform:

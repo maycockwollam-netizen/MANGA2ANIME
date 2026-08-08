@@ -238,6 +238,8 @@ __all__ = [
     "ArtifactIntegrationError",
     "open_render_artifact",
     "validate_render_artifact_handle",
+    # Asset Binding
+    "bind_render_frame_assets",
 ]
 
 
@@ -475,4 +477,8 @@ def __getattr__(name: str):
         from tools.render.artifact_integration import validate_render_artifact_handle
 
         return validate_render_artifact_handle
+    if name == "bind_render_frame_assets":
+        from tools.render.asset_binding import bind_render_frame_assets
+
+        return bind_render_frame_assets
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

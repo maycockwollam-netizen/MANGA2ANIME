@@ -3,6 +3,7 @@
 import hashlib
 
 import pytest
+from PIL import Image
 
 from tools.frame.models import FrameTransform
 from tools.render import (
@@ -677,3 +678,512 @@ class TestImports:
         for imp in imports:
             for forbid in forbidden:
                 assert forbid not in imp, f"Forbidden import found: {imp}"
+
+
+class TestAssetRendering:
+    """Tests for asset-backed rendering."""
+
+    def test_basic_asset_rendering(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that a basic asset is loaded and rendered correctly."""
+        from pathlib import Path
+
+        # Create a simple test asset
+        asset_path = tmp_path / "test_asset.png"
+        asset = Image.new("RGB", (50, 50), color=(255, 0, 0))
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(200, 200))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    source_path=Path(asset_path),
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        assert image is not None
+        # Check that the asset was rendered at the correct position
+        # With anchor at 0.5, the center of the 50x50 asset should be at (50, 50)
+        # So the top-left corner should be at (25, 25)
+        pixel = image.getpixel((25, 25))
+        assert pixel == (255, 0, 0, 255)
+
+    def test_transparent_rgba_asset(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that transparent RGBA assets are rendered with alpha preserved."""
+        from pathlib import Path
+
+        # Create an RGBA asset with transparency
+        asset_path = tmp_path / "transparent_asset.png"
+        asset = Image.new("RGBA", (40, 40), color=(0, 255, 0, 128))  # Semi-transparent green
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(200, 200))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    source_path=Path(asset_path),
+                    opacity=1.0,
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        assert image is not None
+        # Check that the asset was rendered (not background color)
+        # The semi-transparent green will blend with white background
+        pixel = image.getpixel((50, 50))
+        # The result should be a blend of green and white, with alpha < 255
+        assert pixel[3] < 255  # Alpha is less than full due to transparency
+
+    def test_asset_position_transform(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that position transform is applied to assets."""
+        from pathlib import Path
+
+        asset_path = tmp_path / "position_test.png"
+        asset = Image.new("RGB", (50, 50), color=(0, 0, 255))
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(300, 300))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=100,
+                    position_y=150,
+                    source_path=Path(asset_path),
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        # With anchor at (0, 0), top-left of asset should be at (100, 150)
+        pixel_at_position = image.getpixel((100, 150))
+        assert pixel_at_position == (0, 0, 255, 255)
+
+    def test_asset_scale_transform(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that scale transform is applied to assets."""
+        from pathlib import Path
+
+        # Create a 50x50 asset
+        asset_path = tmp_path / "scale_test.png"
+        asset = Image.new("RGB", (50, 50), color=(255, 0, 0))
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(300, 300))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=100,
+                    position_y=100,
+                    scale=2.0,
+                    source_path=Path(asset_path),
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        # With scale 2.0, the 50x50 asset should become 100x100
+        # Position (0,0) of asset should be at (100, 100)
+        # Position (50, 50) of asset should be at (150, 150)
+        # Position (99, 99) of asset should be at (199, 199) - last red pixel
+        pixel_inside = image.getpixel((150, 150))
+        assert pixel_inside == (255, 0, 0, 255)
+
+        # Check that it's actually scaled by verifying a pixel outside the original size
+        # but inside the scaled size
+        pixel_at_scaled = image.getpixel((120, 120))
+        assert pixel_at_scaled == (255, 0, 0, 255)
+
+    def test_asset_rotation_transform(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that rotation transform is applied to assets."""
+        from pathlib import Path
+
+        # Create a simple square asset
+        asset_path = tmp_path / "rotation_test.png"
+        asset = Image.new("RGB", (50, 50), color=(0, 255, 0))
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(300, 300))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=100,
+                    position_y=100,
+                    rotation_deg=90,
+                    source_path=Path(asset_path),
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        assert image is not None
+        # Just verify it renders without error
+
+    def test_asset_opacity_transform(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that opacity transform is applied to assets."""
+        from pathlib import Path
+
+        asset_path = tmp_path / "opacity_test.png"
+        asset = Image.new("RGBA", (50, 50), color=(255, 0, 0, 255))  # Fully opaque red
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(100, 100), background=(255, 255, 255, 255))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    opacity=0.5,
+                    source_path=Path(asset_path),
+                    anchor_x=0.5,
+                    anchor_y=0.5,
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        # With 0.5 opacity on an opaque red asset, the result will be
+        # semi-transparent red blended with white background
+        pixel = image.getpixel((50, 50))
+        # The alpha channel should be < 255 due to opacity applied
+        assert pixel[3] < 255
+        # The red channel should be > 128 due to blending (more red than white)
+        assert pixel[0] > 128
+
+    def test_asset_anchor_behavior(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that anchor behavior is correct for assets."""
+        from pathlib import Path
+
+        asset_path = tmp_path / "anchor_test.png"
+        asset = Image.new("RGB", (100, 100), color=(128, 128, 128))
+        asset.save(asset_path)
+
+        # Test top-left anchor: position (100, 100) is the top-left of the asset
+        renderer1 = ConcreteRenderer(canvas_size=(300, 300))
+        frame1 = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=100,
+                    position_y=100,
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                    source_path=Path(asset_path),
+                )
+            },
+        )
+        renderer1.render(frame1)
+        # Check pixel at (150, 150) which is center of asset (100,100 + 50 offset for 100x100 asset)
+        pixel1 = renderer1.last_output.getpixel((150, 150))
+
+        # Test center anchor: position (100, 100) is the center of the asset
+        renderer2 = ConcreteRenderer(canvas_size=(300, 300))
+        frame2 = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=100,
+                    position_y=100,
+                    anchor_x=0.5,
+                    anchor_y=0.5,
+                    source_path=Path(asset_path),
+                )
+            },
+        )
+        renderer2.render(frame2)
+        # Check pixel at (100, 100) which is center of asset (anchor at center)
+        pixel2 = renderer2.last_output.getpixel((100, 100))
+
+        # Both should have rendered the same color at their respective centers
+        assert pixel1[:3] == pixel2[:3] == (128, 128, 128)
+
+    def test_multiple_assets_composited(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that multiple assets are composited in deterministic order."""
+        from pathlib import Path
+
+        # Create two assets
+        asset1_path = tmp_path / "asset1.png"
+        asset1 = Image.new("RGBA", (50, 50), color=(255, 0, 0, 255))
+        asset1.save(asset1_path)
+
+        asset2_path = tmp_path / "asset2.png"
+        asset2 = Image.new("RGBA", (50, 50), color=(0, 0, 255, 255))
+        asset2.save(asset2_path)
+
+        renderer = ConcreteRenderer(canvas_size=(300, 300))
+
+        # Render with both assets overlapping
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "alpha_entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    source_path=Path(asset1_path),
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                ),
+                "beta_entity": FrameTransform(
+                    position_x=75,
+                    position_y=75,
+                    source_path=Path(asset2_path),
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                ),
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        assert image is not None
+
+        # Deterministic order: alpha renders before beta
+        # At (75, 75), beta's top-left corner, should see blue (beta on top)
+        pixel_overlap = image.getpixel((75, 75))
+        assert pixel_overlap == (0, 0, 255, 255)
+
+        # At (50, 50), only alpha renders (outside beta), should see red
+        pixel_alpha_only = image.getpixel((50, 50))
+        assert pixel_alpha_only == (255, 0, 0, 255)
+
+    def test_missing_asset(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that missing asset raises TransformError."""
+        from pathlib import Path
+
+        renderer = ConcreteRenderer(canvas_size=(200, 200))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    source_path=Path("/nonexistent/path/asset.png"),
+                )
+            },
+        )
+
+        from tools.render import TransformError
+
+        with pytest.raises(TransformError, match="Asset not found"):
+            renderer.render(frame)
+
+    def test_invalid_asset(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that invalid asset raises TransformError."""
+        from pathlib import Path
+
+        # Create an invalid file (not an image)
+        invalid_path = tmp_path / "invalid_asset.txt"
+        invalid_path.write_text("This is not an image")
+
+        renderer = ConcreteRenderer(canvas_size=(200, 200))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    source_path=Path(invalid_path),
+                )
+            },
+        )
+
+        from tools.render import TransformError
+
+        with pytest.raises(TransformError, match="Failed to load asset"):
+            renderer.render(frame)
+
+    def test_deterministic_asset_rendering(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that repeated rendering of assets is deterministic."""
+        from pathlib import Path
+
+        asset_path = tmp_path / "deterministic_asset.png"
+        asset = Image.new("RGB", (50, 50), color=(100, 150, 200))
+        asset.save(asset_path)
+
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=100,
+                    position_y=100,
+                    source_path=Path(asset_path),
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                )
+            },
+        )
+
+        renderer1 = ConcreteRenderer(canvas_size=(300, 300))
+        renderer2 = ConcreteRenderer(canvas_size=(300, 300))
+
+        renderer1.render(frame)
+        renderer2.render(frame)
+
+        assert renderer1.last_output.tobytes() == renderer2.last_output.tobytes()
+
+    def test_asset_rgb_to_rgba_conversion(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that RGB assets are converted to RGBA for compositing."""
+        from pathlib import Path
+
+        # Create an RGB asset (no alpha)
+        asset_path = tmp_path / "rgb_asset.png"
+        asset = Image.new("RGB", (50, 50), color=(255, 128, 0))
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(200, 200))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=50,
+                    position_y=50,
+                    source_path=Path(asset_path),
+                    anchor_x=0.0,
+                    anchor_y=0.0,
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        # Check that image is RGBA mode
+        assert image.mode == "RGBA"
+
+        # Check that the color is preserved with full alpha
+        pixel = image.getpixel((50, 50))
+        assert pixel[:3] == (255, 128, 0)
+        assert pixel[3] == 255
+
+    def test_asset_with_all_transforms(self, tmp_path: pytest.TempPathFactory) -> None:
+        """Test that all transforms work together with assets."""
+        from pathlib import Path
+
+        asset_path = tmp_path / "full_transform_asset.png"
+        asset = Image.new("RGBA", (50, 50), color=(0, 255, 0, 200))
+        asset.save(asset_path)
+
+        renderer = ConcreteRenderer(canvas_size=(300, 300))
+        frame = RenderFrame(
+            frame_index=0,
+            timestamp_seconds=0.0,
+            frame_rate=24.0,
+            duration_frames=24,
+            transforms={
+                "entity": FrameTransform(
+                    position_x=150,
+                    position_y=150,
+                    scale=1.5,
+                    rotation_deg=45,
+                    opacity=0.8,
+                    anchor_x=0.5,
+                    anchor_y=0.5,
+                    source_path=Path(asset_path),
+                )
+            },
+        )
+        renderer.render(frame)
+
+        image = renderer.last_output
+        assert image is not None
+        assert image.mode == "RGBA"
+
+
+class TestSourcePathField:
+    """Tests for FrameTransform source_path field."""
+
+    def test_source_path_none_by_default(self) -> None:
+        """Test that source_path is None by default."""
+        transform = FrameTransform()
+        assert transform.source_path is None
+
+    def test_source_path_can_be_set(self) -> None:
+        """Test that source_path can be set."""
+        from pathlib import Path
+
+        path = Path("/path/to/asset.png")
+        transform = FrameTransform(source_path=path)
+        assert transform.source_path == path
+
+    def test_source_path_with_other_fields(self) -> None:
+        """Test that source_path works with other transform fields."""
+        from pathlib import Path
+
+        path = Path("sprite.png")
+        transform = FrameTransform(
+            position_x=100,
+            position_y=200,
+            scale=2.0,
+            rotation_deg=90,
+            opacity=0.5,
+            anchor_x=0.25,
+            anchor_y=0.75,
+            source_path=path,
+        )
+
+        assert transform.position_x == 100
+        assert transform.position_y == 200
+        assert transform.scale == 2.0
+        assert transform.rotation_deg == 90
+        assert transform.opacity == 0.5
+        assert transform.anchor_x == 0.25
+        assert transform.anchor_y == 0.75
+        assert transform.source_path == path

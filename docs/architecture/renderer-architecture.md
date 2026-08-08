@@ -245,13 +245,18 @@ RendererError (base)
 | `RenderFrameError` | Invalid or unexpected RenderFrame data |
 | `TransformError` | Failed to apply FrameTransform |
 
-## V1 Limitations
+## V1 Capabilities and Limitations
 
-The ConcreteRenderer V1 implementation has the following limitations:
+The ConcreteRenderer V1 implementation has the following capabilities and limitations:
+
+### Implemented
+
+- **Real image assets**: PNG/RGBA assets loaded when `FrameTransform.source_path` is provided
+- **Placeholder rendering**: Colored placeholder rectangles rendered when `source_path` is `None`
+- **Deterministic rendering**: Consistent output for identical inputs
 
 ### Not Implemented
 
-- **Real image assets**: Only placeholder rectangles are rendered
 - **GPU rendering**: CPU-based Pillow rendering only
 - **Resource management**: No texture/sprite pooling
 - **Batching**: No frame batching optimization
@@ -270,7 +275,6 @@ These limitations are intentional for V1. They may be addressed in future increm
 
 Future renderer implementations may consider:
 
-- **Real assets**: AssetProvider abstraction for loading images
 - **GPU backend**: OpenGL/Vulkan accelerated rendering
 - **Animation sequences**: Built-in sequence rendering to frames
 - **Video export**: FFmpeg-based video encoding

@@ -1,10 +1,12 @@
 """Concrete renderer implementation using Pillow.
 
-V1 implementation that renders RenderFrame to RGBA images using placeholder
-rectangles. This is a proof-of-concept renderer that proves the pipeline works.
+V1 implementation that renders RenderFrame to RGBA images using Pillow.
+
+This renderer supports:
+- Placeholder colored rectangles for entities without source assets
+- Actual image assets when source_path is provided in FrameTransform
 
 This module does NOT:
-- Load real image assets
 - Implement GPU rendering
 - Access runtime animation internals
 - Implement caching or batching
@@ -13,12 +15,13 @@ This module does NOT:
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PIL import Image
 
 from tools.frame.models import FrameTransform
-from tools.render.exceptions import RendererError
+from tools.render.exceptions import RendererError, TransformError
 
 if TYPE_CHECKING:
     from tools.render import RenderFrame
@@ -31,8 +34,11 @@ DEFAULT_ENTITY_SIZE = 100
 class ConcreteRenderer:
     """Concrete renderer using Pillow for RGBA image output.
 
-    V1 renders placeholder colored rectangles for each clip_id in the frame.
-    The color is deterministically derived from the clip_id.
+    V1 supports two rendering modes:
+    - Placeholder: Colored rectangles for entities without source assets
+    - Asset: Actual image assets when source_path is provided in FrameTransform
+
+    The color for placeholder mode is deterministically derived from clip_id.
 
     Attributes:
         canvas_size: Output image dimensions as (width, height).
@@ -43,6 +49,7 @@ class ConcreteRenderer:
         >>> from tools.frame.models import FrameTransform
         >>>
         >>> renderer = ConcreteRenderer()
+        >>> # Placeholder rendering
         >>> frame = RenderFrame(
         ...     frame_index=0,
         ...     timestamp_seconds=0.0,
@@ -51,9 +58,16 @@ class ConcreteRenderer:
         ...     transforms={"hero": FrameTransform(position_x=100)},
         ... )
         >>> renderer.render(frame)
-        >>> image = renderer.last_output
-        >>> image.size
-        (800, 600)
+        >>>
+        >>> # Asset rendering
+        >>> asset_frame = RenderFrame(
+        ...     frame_index=0,
+        ...     timestamp_seconds=0.0,
+        ...     frame_rate=24.0,
+        ...     duration_frames=24,
+        ...     transforms={"hero": FrameTransform(position_x=100, source_path=Path("sprite.png"))},
+        ... )
+        >>> renderer.render(asset_frame)
     """
 
     def __init__(
@@ -145,6 +159,9 @@ class ConcreteRenderer:
 
         Returns:
             Tuple of (entity Image, paste_x, paste_y).
+
+        Raises:
+            TransformError: If source_path is invalid or cannot be loaded.
         """
         # Apply defaults for None values
         pos_x = transform.position_x if transform.position_x is not None else 0.0
@@ -155,20 +172,18 @@ class ConcreteRenderer:
         anchor_x = transform.anchor_x if transform.anchor_x is not None else 0.5
         anchor_y = transform.anchor_y if transform.anchor_y is not None else 0.5
 
-        # Calculate effective size
-        if scale > 0:
-            width = int(DEFAULT_ENTITY_SIZE * scale)
-            height = int(DEFAULT_ENTITY_SIZE * scale)
+        # Load asset or create placeholder
+        if transform.source_path is not None:
+            entity = self._load_asset(transform.source_path, opacity)
+            # Apply scale to assets (assets have natural size)
+            if scale != 1.0:
+                entity = self._apply_scale(entity, scale)
         else:
-            # Handle zero scale gracefully
-            width = 1
-            height = 1
+            # Create placeholder with scale applied directly to size
+            entity = self._create_placeholder(clip_id, opacity, scale)
 
-        # Create entity image with deterministic color
-        color = self._clip_id_to_color(clip_id, opacity)
-        entity = Image.new("RGBA", (width, height), color)
-
-        # Apply rotation if needed (before calculating anchor offset)
+        # Apply rotation
+        width, height = entity.size
         if rotation != 0.0:
             # Pillow rotates counter-clockwise by default
             # FrameTransform specifies clockwise positive
@@ -187,6 +202,96 @@ class ConcreteRenderer:
         paste_y = int(pos_y - anchor_offset_y)
 
         return entity, paste_x, paste_y
+
+    def _load_asset(self, source_path: Path, opacity: float) -> Image.Image:
+        """Load an image asset from path.
+
+        Args:
+            source_path: Path to the image file.
+            opacity: Opacity multiplier (0.0-1.0).
+
+        Returns:
+            Loaded RGBA Image with opacity applied.
+
+        Raises:
+            TransformError: If the file cannot be loaded or is invalid.
+        """
+        try:
+            # Load the image
+            image = Image.open(source_path)
+
+            # Convert to RGBA to ensure consistent compositing
+            if image.mode != "RGBA":
+                image = image.convert("RGBA")
+
+            # Apply opacity if not fully opaque
+            if opacity < 1.0:
+                # Create a new image with combined opacity
+                # We need to copy to avoid mutating the original
+                r, g, b, a = image.split()
+                new_alpha = a.point(lambda x: int(x * opacity))
+                image = Image.merge("RGBA", (r, g, b, new_alpha))
+
+            return image
+
+        except FileNotFoundError as e:
+            raise TransformError(
+                f"Asset not found: {source_path}"
+            ) from e
+        except Exception as e:
+            raise TransformError(
+                f"Failed to load asset '{source_path}': {e}"
+            ) from e
+
+    def _create_placeholder(
+        self, clip_id: str, opacity: float, scale: float
+    ) -> Image.Image:
+        """Create a placeholder colored rectangle.
+
+        Args:
+            clip_id: The entity identity key.
+            opacity: The opacity (0.0-1.0).
+            scale: The scale factor (already applied to size).
+
+        Returns:
+            Placeholder RGBA Image with size calculated from scale.
+        """
+        # Calculate effective size using scale
+        if scale > 0:
+            width = int(DEFAULT_ENTITY_SIZE * scale)
+            height = int(DEFAULT_ENTITY_SIZE * scale)
+        else:
+            # Handle zero scale gracefully
+            width = 1
+            height = 1
+
+        # Create entity image with deterministic color
+        color = self._clip_id_to_color(clip_id, opacity)
+        return Image.new("RGBA", (width, height), color)
+
+    def _apply_scale(self, image: Image.Image, scale: float) -> Image.Image:
+        """Apply scale transform to an image.
+
+        Args:
+            image: The source image.
+            scale: Scale factor.
+
+        Returns:
+            Scaled image.
+        """
+        if scale <= 0:
+            # Return a 1x1 transparent pixel for zero/negative scale
+            return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+
+        orig_width, orig_height = image.size
+        new_width = int(orig_width * scale)
+        new_height = int(orig_height * scale)
+
+        # Ensure minimum size of 1
+        new_width = max(1, new_width)
+        new_height = max(1, new_height)
+
+        return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
     def _clip_id_to_color(
         self, clip_id: str, opacity: float
