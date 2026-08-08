@@ -1026,3 +1026,603 @@ def create_render_session(
 - No file creation/modification
 
 See: `tests/tools/render/test_session.py`
+
+## Render Session Access
+
+The session access layer provides high-level read-only inspection functions for RenderSession.
+
+### Architecture
+
+```
+RenderSession
+    ↓
+RenderSessionInfo (summary)
+get_frame_image (image access)
+get_frame_path (path access)
+get_frame_at_timestamp (time resolution)
+```
+
+### Module
+
+```
+tools/render/session_access.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderSessionInfo:
+    frame_count: int
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+    first_frame_index: int
+    last_frame_index: int
+
+
+class SessionAccessError(Exception):
+    """Error accessing render session information."""
+
+
+def get_session_info(session: RenderSession) -> RenderSessionInfo: ...
+def get_frame_image(session: RenderSession, frame_index: int) -> Image.Image: ...
+def get_frame_path(session: RenderSession, frame_index: int) -> Path: ...
+def get_frame_at_timestamp(session: RenderSession, timestamp: float) -> Image.Image: ...
+```
+
+### Responsibilities
+
+- Read-only session inspection
+- Delegation to Preview/Timeline
+- Image/frame access without caching
+
+### What Session Access is NOT
+
+- NOT a renderer
+- NOT a video encoder
+- NOT a media player
+- NOT a caching layer
+- NOT an animation runtime
+
+### Constraints
+
+- Read-only (no file modification)
+- No caching
+- No threads/async
+- Delegation only
+
+See: `tests/tools/render/test_session_access.py`
+
+## Render Session Validation
+
+The session validation layer provides verification of RenderSession internal consistency.
+
+### Architecture
+
+```
+RenderSession
+    ↓
+validate_render_session()
+    ↓
+RenderSessionValidation (or exception)
+```
+
+### Module
+
+```
+tools/render/session_validation.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderSessionValidation:
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+
+
+class SessionValidationError(Exception):
+    """Error validating a RenderSession."""
+
+
+def validate_render_session(session: RenderSession) -> RenderSessionValidation: ...
+```
+
+### Responsibilities
+
+- Verifies Manifest ↔ Preview consistency
+- Verifies Manifest ↔ Timeline consistency
+- Verifies Preview ↔ Timeline consistency
+- Verifies Session properties match underlying components
+- Delegates PNG validation to validate_render_sequence()
+- Verifies timeline mapping consistency
+
+### Relationship to validate_render_sequence()
+
+Session validation delegates PNG/image validation to the existing validation layer rather than reimplementing it.
+
+### Constraints
+
+- Read-only
+- No file creation/modification
+- No caching
+- No threads/async
+- Orchestration only (delegates to existing layers)
+
+See: `tests/tools/render/test_session_validation.py`
+
+## Render Artifact
+
+The artifact layer provides an immutable snapshot of a RenderSession's validated state.
+
+### Architecture
+
+```
+RenderSession
+    ↓
+create_render_artifact()
+    ↓
+RenderArtifact (immutable snapshot)
+```
+
+### Module
+
+```
+tools/render/artifact.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderArtifact:
+    output_dir: Path
+    prefix: str
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+
+
+class ArtifactError(Exception):
+    """Error creating or accessing a render artifact."""
+
+
+def create_render_artifact(
+    session: RenderSession,
+    *,
+    validate: bool = True,
+) -> RenderArtifact: ...
+```
+
+### Responsibilities
+
+- Creates immutable snapshot of session metadata
+- Optional validation before snapshot creation
+- Preserves all essential render sequence properties
+
+### Constraints
+
+- Read-only
+- No file creation/modification
+- No caching
+- No threads/async
+- Orchestration only
+
+See: `tests/tools/render/test_artifact.py`
+
+## Render Artifact Validation
+
+The artifact validation layer provides integrity verification for RenderArtifact against the PNG sequence on disk.
+
+### Architecture
+
+```
+RenderArtifact
+    ↓
+validate_render_artifact()
+    ↓
+RenderArtifactValidation (or exception)
+```
+
+### Module
+
+```
+tools/render/artifact_validation.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderArtifactValidation:
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    dimensions: tuple[int, int]
+    mode: str
+    valid: bool
+
+
+class ArtifactValidationError(Exception):
+    """Error validating a RenderArtifact."""
+
+
+def validate_render_artifact(artifact: RenderArtifact) -> RenderArtifactValidation: ...
+```
+
+### Responsibilities
+
+- Validates PNG sequence via validate_render_sequence()
+- Verifies artifact metadata matches PNG sequence
+- Checks artifact internal validity (frame_count > 0, unique indices, etc.)
+- Preserves error chaining
+
+### Constraints
+
+- Read-only
+- No file modification
+- No caching
+- No threads/async
+- Orchestration only
+
+See: `tests/tools/render/test_artifact_validation.py`
+
+## Render Artifact Manifest
+
+The artifact manifest layer provides deterministic metadata serialization for RenderArtifact.
+
+### Architecture
+
+```
+RenderArtifact
+    ↓
+create_artifact_manifest()
+    ↓
+RenderArtifactManifest
+    ↓
+artifact_manifest_to_dict() / write_artifact_manifest()
+    ↓
+JSON (deterministic)
+    ↓
+artifact_manifest_from_dict() / read_artifact_manifest()
+    ↓
+RenderArtifactManifest
+```
+
+### Module
+
+```
+tools/render/artifact_manifest.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderArtifactManifest:
+    output_dir: str
+    prefix: str
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+
+
+class ArtifactManifestError(Exception):
+    """Error creating or reading a render artifact manifest."""
+
+
+def create_artifact_manifest(artifact: RenderArtifact) -> RenderArtifactManifest: ...
+def artifact_manifest_to_dict(manifest: RenderArtifactManifest) -> dict[str, object]: ...
+def artifact_manifest_from_dict(data: Mapping[str, object]) -> RenderArtifactManifest: ...
+def write_artifact_manifest(manifest: RenderArtifactManifest, output_path: Path | str) -> None: ...
+def read_artifact_manifest(input_path: Path | str) -> RenderArtifactManifest: ...
+```
+
+### Validation Rules
+
+- frame_count > 0
+- frame_indices non-empty, unique
+- frame_rate finite and > 0
+- duration_seconds finite and >= 0
+- dimensions: [width, height] positive ints
+- mode: non-empty string
+- prefix: string
+
+### Constraints
+
+- Deterministic JSON output
+- No parent directory creation
+- No file overwrite
+- No PNG data serialization
+- Read-only JSON parsing
+
+See: `tests/tools/render/test_artifact_manifest.py`
+
+## Render Artifact Manifest Validation
+
+The artifact manifest validation layer provides integrity verification for RenderArtifactManifest against RenderArtifact and PNG sequence.
+
+### Architecture
+
+```
+RenderArtifact + RenderArtifactManifest
+    ↓
+validate_artifact_manifest()
+    ↓
+RenderArtifactManifestValidation (or exception)
+```
+
+### Module
+
+```
+tools/render/artifact_manifest_validation.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderArtifactManifestValidation:
+    valid: bool
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    dimensions: tuple[int, int]
+    mode: str
+
+
+class ArtifactManifestValidationError(Exception):
+    """Error validating a RenderArtifactManifest."""
+
+
+def validate_artifact_manifest(
+    artifact: RenderArtifact,
+    manifest: RenderArtifactManifest,
+) -> RenderArtifactManifestValidation: ...
+```
+
+### Responsibilities
+
+- Validates artifact using artifact validation layer
+- Verifies manifest vs artifact metadata
+- Verifies manifest vs PNG sequence
+- Detects all mismatch types
+
+### Constraints
+
+- Read-only
+- No file modification
+- No caching
+- No threads/async
+
+See: `tests/tools/render/test_artifact_manifest_validation.py`
+
+## Render Artifact Loader
+
+The artifact loader provides read-only loading of an existing render artifact from its JSON manifest.
+
+### Architecture
+
+```
+manifest.json
+    ↓
+read_artifact_manifest()
+    ↓
+RenderArtifactManifest
+    ↓
+load_render_artifact()
+    ↓
+LoadedRenderArtifact (or exception)
+```
+
+### Module
+
+```
+tools/render/artifact_loader.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class LoadedRenderArtifact:
+    artifact: RenderArtifact
+    manifest: RenderArtifactManifest
+
+
+class ArtifactLoadError(Exception):
+    """Error loading a render artifact."""
+
+
+def load_render_artifact(
+    manifest_path: Path | str,
+    *,
+    validate: bool = True,
+) -> LoadedRenderArtifact: ...
+```
+
+### Constraints
+
+- Read-only
+- No file modification
+- No caching
+- Deterministic
+
+See: `tests/tools/render/test_artifact_loader.py`
+
+## Render Artifact Access
+
+The artifact access layer provides read-only access to information and frames from a LoadedRenderArtifact.
+
+### Architecture
+
+```
+LoadedRenderArtifact
+    ↓
+get_artifact_info()
+    ↓
+RenderArtifactInfo
+
+LoadedRenderArtifact
+    ↓
+get_artifact_frame_path()
+    ↓
+Path
+
+LoadedRenderArtifact
+    ↓
+get_artifact_frame_image()
+    ↓
+Image.Image
+
+LoadedRenderArtifact + timestamp
+    ↓
+get_artifact_frame_at_timestamp()
+    ↓
+Image.Image
+```
+
+### Module
+
+```
+tools/render/artifact_access.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderArtifactInfo:
+    output_dir: Path
+    prefix: str
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+    first_frame_index: int
+    last_frame_index: int
+
+
+class ArtifactAccessError(Exception):
+    """Error accessing information from a loaded render artifact."""
+
+
+def get_artifact_info(loaded: LoadedRenderArtifact) -> RenderArtifactInfo: ...
+def get_artifact_frame_path(loaded: LoadedRenderArtifact, frame_index: int) -> Path: ...
+def get_artifact_frame_image(loaded: LoadedRenderArtifact, frame_index: int) -> Image.Image: ...
+def get_artifact_frame_at_timestamp(loaded: LoadedRenderArtifact, timestamp: float) -> Image.Image: ...
+```
+
+### Constraints
+
+- Read-only
+- No file modification
+- No caching
+- Deterministic
+
+See: `tests/tools/render/test_artifact_access.py`
+
+## Render Artifact Integration
+
+The artifact integration layer provides a unified, read-only interface for working with render artifacts.
+
+### Architecture
+
+```
+manifest.json
+    ↓
+open_render_artifact()
+    ↓
+RenderArtifactHandle
+    ├── .loaded.artifact
+    ├── .loaded.manifest
+    ├── .info
+    ├── .frame_path()
+    ├── .frame_image()
+    └── .frame_at_timestamp()
+
+RenderArtifactHandle + validate_render_artifact_handle()
+    ↓
+(None or ArtifactIntegrationError)
+```
+
+### Module
+
+```
+tools/render/artifact_integration.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderArtifactHandle:
+    loaded: LoadedRenderArtifact
+
+    @property
+    def info(self) -> RenderArtifactInfo: ...
+    def frame_path(self, frame_index: int) -> Path: ...
+    def frame_image(self, frame_index: int) -> Image.Image: ...
+    def frame_at_timestamp(self, timestamp: float) -> Image.Image: ...
+
+
+class ArtifactIntegrationError(Exception):
+    """Error working with an integrated render artifact."""
+
+
+def open_render_artifact(
+    manifest_path: Path | str,
+    *,
+    validate: bool = True,
+) -> RenderArtifactHandle: ...
+
+
+def validate_render_artifact_handle(
+    handle: RenderArtifactHandle,
+) -> None: ...
+```
+
+### Delegation Graph
+
+```
+open_render_artifact()
+    └── load_render_artifact()
+
+validate_render_artifact_handle()
+    ├── validate_render_artifact()
+    └── validate_artifact_manifest()
+
+RenderArtifactHandle.info
+    └── get_artifact_info()
+
+RenderArtifactHandle.frame_path()
+    └── get_artifact_frame_path()
+
+RenderArtifactHandle.frame_image()
+    └── get_artifact_frame_image()
+
+RenderArtifactHandle.frame_at_timestamp()
+    └── get_artifact_frame_at_timestamp()
+```
+
+### Constraints
+
+- Read-only
+- No file modification
+- No caching
+- Deterministic
+
+See: `tests/tools/render/test_artifact_integration.py`

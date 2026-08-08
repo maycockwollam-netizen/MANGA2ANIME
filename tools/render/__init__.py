@@ -191,6 +191,53 @@ __all__ = [
     "RenderSession",
     "SessionError",
     "create_render_session",
+    # Session Access
+    "RenderSessionInfo",
+    "SessionAccessError",
+    "get_session_info",
+    "get_frame_image",
+    "get_frame_path",
+    "get_frame_at_timestamp",
+    # Session Validation
+    "RenderSessionValidation",
+    "SessionValidationError",
+    "validate_render_session",
+    # Artifact
+    "RenderArtifact",
+    "ArtifactError",
+    "create_render_artifact",
+    # Artifact Validation
+    "RenderArtifactValidation",
+    "ArtifactValidationError",
+    "validate_render_artifact",
+    # Artifact Manifest
+    "RenderArtifactManifest",
+    "ArtifactManifestError",
+    "create_artifact_manifest",
+    "artifact_manifest_to_dict",
+    "artifact_manifest_from_dict",
+    "write_artifact_manifest",
+    "read_artifact_manifest",
+    # Artifact Manifest Validation
+    "RenderArtifactManifestValidation",
+    "ArtifactManifestValidationError",
+    "validate_artifact_manifest",
+    # Artifact Loader
+    "LoadedRenderArtifact",
+    "ArtifactLoadError",
+    "load_render_artifact",
+    # Artifact Access
+    "RenderArtifactInfo",
+    "ArtifactAccessError",
+    "get_artifact_info",
+    "get_artifact_frame_path",
+    "get_artifact_frame_image",
+    "get_artifact_frame_at_timestamp",
+    # Artifact Integration
+    "RenderArtifactHandle",
+    "ArtifactIntegrationError",
+    "open_render_artifact",
+    "validate_render_artifact_handle",
 ]
 
 
@@ -276,4 +323,156 @@ def __getattr__(name: str):
         from tools.render.session import SessionError
 
         return SessionError
+    if name == "get_session_info":
+        from tools.render.session_access import get_session_info
+
+        return get_session_info
+    if name == "RenderSessionInfo":
+        from tools.render.session_access import RenderSessionInfo
+
+        return RenderSessionInfo
+    if name == "SessionAccessError":
+        from tools.render.session_access import SessionAccessError
+
+        return SessionAccessError
+    if name == "get_frame_image":
+        from tools.render.session_access import get_frame_image
+
+        return get_frame_image
+    if name == "get_frame_path":
+        from tools.render.session_access import get_frame_path
+
+        return get_frame_path
+    if name == "get_frame_at_timestamp":
+        from tools.render.session_access import get_frame_at_timestamp
+
+        return get_frame_at_timestamp
+    if name == "validate_render_session":
+        from tools.render.session_validation import validate_render_session
+
+        return validate_render_session
+    if name == "RenderSessionValidation":
+        from tools.render.session_validation import RenderSessionValidation
+
+        return RenderSessionValidation
+    if name == "SessionValidationError":
+        from tools.render.session_validation import SessionValidationError
+
+        return SessionValidationError
+    if name == "create_render_artifact":
+        from tools.render.artifact import create_render_artifact
+
+        return create_render_artifact
+    if name == "RenderArtifact":
+        from tools.render.artifact import RenderArtifact
+
+        return RenderArtifact
+    if name == "ArtifactError":
+        from tools.render.artifact import ArtifactError
+
+        return ArtifactError
+    if name == "validate_render_artifact":
+        from tools.render.artifact_validation import validate_render_artifact
+
+        return validate_render_artifact
+    if name == "RenderArtifactValidation":
+        from tools.render.artifact_validation import RenderArtifactValidation
+
+        return RenderArtifactValidation
+    if name == "ArtifactValidationError":
+        from tools.render.artifact_validation import ArtifactValidationError
+
+        return ArtifactValidationError
+    if name == "create_artifact_manifest":
+        from tools.render.artifact_manifest import create_artifact_manifest
+
+        return create_artifact_manifest
+    if name == "artifact_manifest_to_dict":
+        from tools.render.artifact_manifest import artifact_manifest_to_dict
+
+        return artifact_manifest_to_dict
+    if name == "artifact_manifest_from_dict":
+        from tools.render.artifact_manifest import artifact_manifest_from_dict
+
+        return artifact_manifest_from_dict
+    if name == "write_artifact_manifest":
+        from tools.render.artifact_manifest import write_artifact_manifest
+
+        return write_artifact_manifest
+    if name == "read_artifact_manifest":
+        from tools.render.artifact_manifest import read_artifact_manifest
+
+        return read_artifact_manifest
+    if name == "RenderArtifactManifest":
+        from tools.render.artifact_manifest import RenderArtifactManifest
+
+        return RenderArtifactManifest
+    if name == "ArtifactManifestError":
+        from tools.render.artifact_manifest import ArtifactManifestError
+
+        return ArtifactManifestError
+    if name == "validate_artifact_manifest":
+        from tools.render.artifact_manifest_validation import validate_artifact_manifest
+
+        return validate_artifact_manifest
+    if name == "RenderArtifactManifestValidation":
+        from tools.render.artifact_manifest_validation import RenderArtifactManifestValidation
+
+        return RenderArtifactManifestValidation
+    if name == "ArtifactManifestValidationError":
+        from tools.render.artifact_manifest_validation import ArtifactManifestValidationError
+
+        return ArtifactManifestValidationError
+    if name == "load_render_artifact":
+        from tools.render.artifact_loader import load_render_artifact
+
+        return load_render_artifact
+    if name == "LoadedRenderArtifact":
+        from tools.render.artifact_loader import LoadedRenderArtifact
+
+        return LoadedRenderArtifact
+    if name == "ArtifactLoadError":
+        from tools.render.artifact_loader import ArtifactLoadError
+
+        return ArtifactLoadError
+    if name == "get_artifact_info":
+        from tools.render.artifact_access import get_artifact_info
+
+        return get_artifact_info
+    if name == "get_artifact_frame_path":
+        from tools.render.artifact_access import get_artifact_frame_path
+
+        return get_artifact_frame_path
+    if name == "get_artifact_frame_image":
+        from tools.render.artifact_access import get_artifact_frame_image
+
+        return get_artifact_frame_image
+    if name == "get_artifact_frame_at_timestamp":
+        from tools.render.artifact_access import get_artifact_frame_at_timestamp
+
+        return get_artifact_frame_at_timestamp
+    if name == "RenderArtifactInfo":
+        from tools.render.artifact_access import RenderArtifactInfo
+
+        return RenderArtifactInfo
+    if name == "ArtifactAccessError":
+        from tools.render.artifact_access import ArtifactAccessError
+
+        return ArtifactAccessError
+    if name == "RenderArtifactHandle":
+        from tools.render.artifact_integration import RenderArtifactHandle
+
+        return RenderArtifactHandle
+    if name == "ArtifactIntegrationError":
+        from tools.render.artifact_integration import ArtifactIntegrationError
+
+        return ArtifactIntegrationError
+    if name == "open_render_artifact":
+        from tools.render.artifact_integration import open_render_artifact
+
+        return open_render_artifact
+    if name == "validate_render_artifact_handle":
+        from tools.render.artifact_integration import validate_render_artifact_handle
+
+        return validate_render_artifact_handle
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
