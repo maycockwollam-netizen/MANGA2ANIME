@@ -172,6 +172,13 @@ __all__ = [
     "RenderSequenceValidation",
     "ValidationError",
     "validate_render_sequence",
+    # Preview
+    "RenderPreview",
+    "PreviewError",
+    "create_render_preview",
+    # Manifest
+    "RenderSequenceManifest",
+    "create_render_manifest",
 ]
 
 
@@ -201,4 +208,24 @@ def __getattr__(name: str):
         from tools.render.validation import ValidationError
 
         return ValidationError
+    if name == "create_render_preview":
+        from tools.render.preview import create_render_preview
+
+        return create_render_preview
+    if name == "RenderPreview":
+        from tools.render.preview import RenderPreview
+
+        return RenderPreview
+    if name == "PreviewError":
+        from tools.render.preview import PreviewError
+
+        return PreviewError
+    if name == "create_render_manifest":
+        from tools.render.manifest import create_render_manifest
+
+        return create_render_manifest
+    if name == "RenderSequenceManifest":
+        from tools.render.manifest import RenderSequenceManifest
+
+        return RenderSequenceManifest
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -678,3 +678,127 @@ def validate_render_sequence(
 - Does not import Pillow rendering internals beyond metadata inspection
 
 See: `tests/tools/render/test_validation.py`
+
+## Render Sequence Preview
+
+The preview layer provides read-only inspection of exported PNG sequences.
+
+### Architecture
+
+```
+PNG sequence
+        ↓
+    create_render_preview()
+        ↓
+    RenderPreview (inspection abstraction)
+```
+
+### Module
+
+```
+tools/render/preview.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderPreview:
+    frame_paths: tuple[Path, ...]
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+
+    @property
+    def frame_count(self) -> int:
+        ...
+
+    def frame_path(self, frame_index: int) -> Path:
+        ...
+
+    def frame_image(self, frame_index: int) -> Image.Image:
+        ...
+
+
+def create_render_preview(
+    output_dir: Path | str,
+    *,
+    prefix: str = "frame",
+    frame_rate: float = 24.0,
+) -> RenderPreview:
+    ...
+```
+
+### Preview Behavior
+
+- Delegates validation to existing `validate_render_sequence()`
+- No file modification
+- No image caching
+- No async behavior
+
+### Constraints
+
+- Does not render anything
+- Does not modify files
+- Does not encode video
+- Does not launch a UI
+
+See: `tests/tools/render/test_preview.py`
+
+## Render Sequence Manifest
+
+The manifest layer provides immutable metadata describing an already-exported PNG sequence.
+
+### Architecture
+
+```
+PNG sequence
+        ↓
+    create_render_manifest()
+        ↓
+    RenderSequenceManifest (metadata description)
+```
+
+### Module
+
+```
+tools/render/manifest.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class RenderSequenceManifest:
+    output_dir: Path
+    prefix: str
+    frame_count: int
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+    dimensions: tuple[int, int]
+    mode: str
+
+
+def create_render_manifest(
+    output_dir: Path | str,
+    *,
+    prefix: str = "frame",
+    frame_rate: float = 24.0,
+) -> RenderSequenceManifest:
+    ...
+```
+
+### Relationship with Other Layers
+
+- **Validation**: Manifest delegates to `validate_render_sequence()`
+- **Preview**: Manifest provides metadata; Preview provides frame access
+- Both are read-only, no rendering responsibility
+
+### Constraints
+
+- Immutable metadata only
+- No file modification
+- Delegates validation to existing layer
+
+See: `tests/tools/render/test_manifest.py`
