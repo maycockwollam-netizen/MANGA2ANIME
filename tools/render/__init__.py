@@ -179,6 +179,9 @@ __all__ = [
     # Manifest
     "RenderSequenceManifest",
     "create_render_manifest",
+    # Playback
+    "RenderPlayback",
+    "PlaybackError",
 ]
 
 
@@ -228,4 +231,12 @@ def __getattr__(name: str):
         from tools.render.manifest import RenderSequenceManifest
 
         return RenderSequenceManifest
+    if name == "RenderPlayback":
+        from tools.render.playback import RenderPlayback
+
+        return RenderPlayback
+    if name == "PlaybackError":
+        from tools.render.playback import PlaybackError
+
+        return PlaybackError
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

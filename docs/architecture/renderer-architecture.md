@@ -802,3 +802,62 @@ def create_render_manifest(
 - Delegates validation to existing layer
 
 See: `tests/tools/render/test_manifest.py`
+
+## Render Sequence Playback V1
+
+The playback layer provides synchronous playback control over an existing RenderPreview.
+
+### Architecture
+
+```
+RenderPreview
+        ↓
+    RenderPlayback
+        ↓
+    current frame / seek / step
+```
+
+### Module
+
+```
+tools/render/playback.py
+```
+
+### API
+
+```python
+class RenderPlayback:
+    preview: RenderPreview
+    frame_rate: float
+
+    # Properties
+    frame_count: int
+    frame_duration: float
+    current_frame_index: int
+    current_frame_path: Path
+    playing: bool
+
+    # Methods
+    def play() -> None: ...
+    def pause() -> None: ...
+    def stop() -> None: ...
+    def seek(frame_index: int) -> None: ...
+    def step_forward() -> None: ...
+    def step_backward() -> None: ...
+    def current_frame_image() -> Image.Image: ...
+
+
+class PlaybackError(Exception):
+    """Error controlling render playback."""
+```
+
+### V1 Constraints
+
+- Synchronous only (no threads, no async)
+- No real-time timing (timing is external)
+- No caching
+- No looping
+- No video encoding
+- No GUI
+
+See: `tests/tools/render/test_playback.py`
