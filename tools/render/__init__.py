@@ -182,6 +182,11 @@ __all__ = [
     # Playback
     "RenderPlayback",
     "PlaybackError",
+    # Timeline
+    "FrameTimeline",
+    "TimelineError",
+    "create_frame_timeline",
+    "create_frame_timeline_from_preview",
 ]
 
 
@@ -239,4 +244,20 @@ def __getattr__(name: str):
         from tools.render.playback import PlaybackError
 
         return PlaybackError
+    if name == "create_frame_timeline":
+        from tools.render.timeline import create_frame_timeline
+
+        return create_frame_timeline
+    if name == "FrameTimeline":
+        from tools.render.timeline import FrameTimeline
+
+        return FrameTimeline
+    if name == "TimelineError":
+        from tools.render.timeline import TimelineError
+
+        return TimelineError
+    if name == "create_frame_timeline_from_preview":
+        from tools.render.timeline import create_frame_timeline_from_preview
+
+        return create_frame_timeline_from_preview
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

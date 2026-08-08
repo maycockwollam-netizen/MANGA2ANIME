@@ -861,3 +861,85 @@ class PlaybackError(Exception):
 - No GUI
 
 See: `tests/tools/render/test_playback.py`
+
+## Frame Timeline Mapping
+
+The timeline layer provides deterministic timestamp <-> frame index mapping.
+
+### Architecture
+
+```
+RenderSequenceManifest / RenderPreview
+        ↓
+    FrameTimeline
+```
+
+### Module
+
+```
+tools/render/timeline.py
+```
+
+### API
+
+```python
+@dataclass(frozen=True)
+class FrameTimeline:
+    frame_indices: tuple[int, ...]
+    frame_rate: float
+    duration_seconds: float
+
+    # Properties
+    frame_count: int
+    frame_duration: float
+    start_timestamp: float
+    end_timestamp: float
+
+    # Methods
+    def timestamp_for_frame(frame_index: int) -> float: ...
+    def frame_for_timestamp(timestamp: float) -> int: ...
+    def frame_position(frame_index: int) -> int: ...
+
+
+class TimelineError(Exception):
+    """Error working with frame timeline mapping."""
+
+
+def create_frame_timeline(
+    frame_indices: Iterable[int],
+    *,
+    frame_rate: float = 24.0,
+    duration_seconds: float | None = None,
+) -> FrameTimeline:
+    ...
+
+
+def create_frame_timeline_from_preview(
+    preview: RenderPreview,
+) -> FrameTimeline:
+    ...
+```
+
+### Timing Semantics
+
+- Constant frame-rate: `frame_duration = 1.0 / frame_rate`
+- `timestamp = position * frame_duration` where position is zero-based
+- Frame index is NOT the position (may be offset)
+- `frame_for_timestamp()` uses `floor(timestamp * frame_rate)`
+
+### Boundary Behavior
+
+- `timestamp < 0` → TimelineError
+- `timestamp > duration` → TimelineError
+- `frame_index not in sequence` → TimelineError
+- Forward/backward clamping where documented
+
+### Constraints
+
+- Immutable
+- Deterministic
+- Read-only
+- No real-time playback
+- No video encoding
+
+See: `tests/tools/render/test_timeline.py`
