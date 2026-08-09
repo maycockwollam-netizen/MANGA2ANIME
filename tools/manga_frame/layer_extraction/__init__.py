@@ -426,6 +426,40 @@ class LayerExtractionResult(BaseModel):
 # Module Exports
 # ============================================================================
 
+# Re-export CV implementation symbols. Contract symbols above are unchanged;
+# these additions expose the computer-vision implementation that produces
+# LayerExtractionResult without altering any contract field or type.
+from tools.manga_frame.layer_extraction.cv_detector import (  # noqa: E402
+    DetectedRegion,
+    detect_regions,
+    detect_regions_from_path,
+)
+from tools.manga_frame.layer_extraction.exceptions import (  # noqa: E402
+    LayerExtractionClassificationError,
+    LayerExtractionConfigError,
+    LayerExtractionDetectionError,
+    LayerExtractionError,
+    LayerExtractionImageError,
+    LayerExtractionInputError,
+)
+from tools.manga_frame.layer_extraction.extractor import (  # noqa: E402
+    ConcreteLayerExtractor,
+    extract_layers,
+)
+from tools.manga_frame.layer_extraction.features import (  # noqa: E402
+    ShapeFeatures,
+    compute_features,
+)
+from tools.manga_frame.layer_extraction.shape_classifier import (  # noqa: E402
+    CHARACTER_BLEED,
+    PANEL,
+    PANEL_BORDERED,
+    PANEL_BORDERLESS,
+    SPEECH_BUBBLE,
+    ClassificationResult,
+    classify,
+)
+
 __all__ = [
     # Enums
     "LayerCategory",
@@ -436,4 +470,29 @@ __all__ = [
     "ExtractionConfig",
     "LayerExtractionInput",
     "LayerExtractionResult",
+    # CV implementation: features
+    "ShapeFeatures",
+    "compute_features",
+    # CV implementation: detector
+    "DetectedRegion",
+    "detect_regions",
+    "detect_regions_from_path",
+    # CV implementation: classifier
+    "ClassificationResult",
+    "classify",
+    "CHARACTER_BLEED",
+    "PANEL",
+    "PANEL_BORDERED",
+    "PANEL_BORDERLESS",
+    "SPEECH_BUBBLE",
+    # CV implementation: extractor
+    "ConcreteLayerExtractor",
+    "extract_layers",
+    # Exceptions
+    "LayerExtractionError",
+    "LayerExtractionInputError",
+    "LayerExtractionImageError",
+    "LayerExtractionDetectionError",
+    "LayerExtractionClassificationError",
+    "LayerExtractionConfigError",
 ]
