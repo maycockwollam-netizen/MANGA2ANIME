@@ -29,27 +29,18 @@ Dependency Constraints:
 
 from __future__ import annotations
 
-# VFX Effect Adapter - must be imported after protocol
 from tools.vfx.adapter import EffectAdapter as EffectAdapter  # noqa: E402
-
-# Concrete VFX Effect - must be imported after protocol
 from tools.vfx.concrete_effect import SpeedLinesEffect as SpeedLinesEffect  # noqa: E402
-
-# VFX Exceptions - must be imported after models
 from tools.vfx.exceptions import (  # noqa: E402
     VfxConfigError,
     VfxError,
     VfxRenderError,
 )
-
-# VFX Models - must be imported first
-from tools.vfx.models import (
+from tools.vfx.models import (  # noqa: E402
     SpeedLineDirection,
     SpeedLinesConfig,
     VfxResult,
 )
-
-# VFX Effect Protocol - must be imported after models
 from tools.vfx.protocol import VfxEffect as VfxEffect  # noqa: E402
 
 __all__ = [
