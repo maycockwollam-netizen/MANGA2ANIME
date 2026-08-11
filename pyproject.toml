@@ -15,9 +15,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 
+# Added opencv dependency for CV modules (cv2 import)
+
 dependencies = [
     "pillow>=10.0.0",
     "pydantic>=2.0.0",
+    "opencv-python-headless>=4.8",
 ]
 
 [project.optional-dependencies]
